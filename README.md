@@ -1,4 +1,4 @@
-# ps1-to-ios
+# ps-to-ios
 
 Takes a **zip** of your own PS1 disc dump, recompiles the game's code ahead of
 time to C with [psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp),
