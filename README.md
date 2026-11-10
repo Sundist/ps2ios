@@ -1,99 +1,101 @@
 # ps1-to-ios
 
-Kendi PS1 disk dökümünüzün **zip** dosyasını alır, oyunun kodunu
-[psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp) ile önceden C'ye
-çevirir ve iPhone/iPad için **yerel, imzalı bir uygulama** üretir. Emülatör
-ya da JIT kullanılmaz. Grafik, ses ve videolar çalışma anında telefondaki disk
-imajından okunur.
+Takes a **zip** of your own PS1 disc dump, recompiles the game's code ahead of
+time to C with [psxrecomp](https://github.com/RetroPortingToolKit/psxrecomp),
+and builds a **native, signed iPhone/iPad app** from it. No emulator and no JIT.
+Graphics, sound and videos are read at run time from the disc image on the phone.
 
-> Bu repo oyun verisi içermez ve indirmez. Yalnızca sahip olduğunuz disklerin
-> dökümleriyle kullanın. psxrecomp PolyForm Noncommercial 1.0.0 lisanslıdır:
-> ürettiğiniz uygulamalar ticari olmayan kullanım içindir.
+> This repository contains no game data and downloads none. Use it only with
+> dumps of discs you own. psxrecomp is licensed under PolyForm Noncommercial
+> 1.0.0, so the apps you build are for noncommercial use.
 
-## Nasıl çalışır
+## How it works
 
 ```
-game.zip ─► diski bul (cue/bin, chd, tek bin, iso; çok diskli setler)
-        ─► SYSTEM.CNF → BOOT → PS-X EXE başlığı → seri no (ör. SCES-00891)
-        ─► proje:  hazır profil varsa (profiles/<SERI>.json) o proje
-                   yoksa psxrecomp'un kendi iskeleti (setup_project.sh)
-        ─► oyunu diskten C'ye çevir (psxrecomp generate)
-        ─► iOS katmanı (ios/): Belgeler klasörü, dokunmatik PS kumandası, MoltenVK
-        ─► Xcode projesi → xcodebuild archive (otomatik imza) → .ipa
-        ─► (isteğe bağlı) devicectl ile iPhone'a kur + diski Documents/disc/ içine kopyala
+game.zip ─► find the disc (cue/bin, chd, lone bin, iso; multi-disc sets)
+        ─► SYSTEM.CNF → BOOT → PS-X EXE header → serial (e.g. SCES-00891)
+        ─► project:  a curated profile if one exists (profiles/<SERIAL>.json),
+                     otherwise psxrecomp's own scaffold (setup_project.sh)
+        ─► recompile the game from the disc (psxrecomp generate)
+        ─► iOS layer (ios/): Documents game folder, touch PS pad, MoltenVK
+        ─► Xcode project → xcodebuild archive (automatic signing) → .ipa
+        ─► (optional) install with devicectl + copy the disc to Documents/disc/
 ```
 
-psxrecomp'un üç çalıştırma katmanı var: önceden derlenmiş kod, çalışma anında
-derlenen overlay'ler ve her zaman doğru çalışan bir MIPS yorumlayıcısı. iOS
-çalışma anında kod üretmeye izin vermediği için 2. katman kapatılır. Statik
-geçişin bulamadığı kod yorumlayıcıda çalışır (iOS buna izin veriyor). Yani
-**her oyun ilk derlemede doğru çalışmalı**. Hazır profili olan oyunlar ise
-tamamen önceden derlendiği için daha hızlıdır.
+psxrecomp runs code in three tiers: ahead-of-time compiled code, overlays
+compiled at run time, and a MIPS interpreter that is always correct. iOS does
+not allow generating code at run time, so tier 2 is switched off. Code the
+static pass did not find runs in the interpreter, which iOS allows. So **every
+game should run correctly from the first build**. Games with a curated profile
+are fully compiled ahead of time and run faster.
 
-| Proje türü | Oyunlar | Sonuç |
+| Project kind | Games | Result |
 |---|---|---|
-| Hazır (curated) | Hercules PAL: SCES-00891…00895 ([hercules-recompiled](https://github.com/obaidr1/hercules-recompiled)) | Tam AOT, modlar |
-| Genel | Diğer tüm PS1 diskleri | Ana EXE derlenir, gerisi yorumlayıcıda; oyuna göre hız/uyumluluk değişir |
+| Curated | Hercules PAL: SCES-00891…00895 ([hercules-recompiled](https://github.com/obaidr1/hercules-recompiled)) | Full AOT, mods |
+| Generic | Any other PS1 disc | Main EXE compiled, the rest interpreted; speed and compatibility vary by game |
 
-Yeni bir hazır proje eklemek için `profiles/<SERI>.json` yazmak yeterli
-(repo, commit, proje klasörü, yamalar, GameData).
+To add a curated project, write `profiles/<SERIAL>.json` (repo, commit,
+project folder, patches, GameData).
 
-## Kullanım
+## Usage
 
-Diski tanıma her yerde çalışır (Linux dahil):
-
-```bash
-python3 -m ps1ios inspect "Oyun.zip"
-```
-
-iPhone uygulamasını derlemek için bir Mac gerekir:
+Identifying a disc works anywhere, Linux included:
 
 ```bash
-python3 -m ps1ios build "Oyun.zip" --team TAKIMID --human
+python3 -m ps1ios inspect "Game.zip"
 ```
 
-Kurulum ve disk kopyası dahil:
+Building the iPhone app needs a Mac:
 
 ```bash
-python3 -m ps1ios build "Oyun.zip" --team TAKIMID --device <cihaz-id> --human
+python3 -m ps1ios build "Game.zip" --team TEAMID --human
 ```
 
-Cihaz kimliği:
+With install and disc copy:
+
+```bash
+python3 -m ps1ios build "Game.zip" --team TEAMID --device <device-id> --human
+```
+
+Device id:
 
 ```bash
 xcrun devicectl list devices
 ```
 
-Seçenekler: `--name` (ana ekran adı), `--bios SCPH1001.BIN` (isteğe bağlı;
-yoksa OpenBIOS kullanılır), `--generic` (hazır profili yok say),
-`--bundle-prefix`, `--work`, `--out`. `--human` verilmezse ilerleme
-HookLink/NX2Apple'ın okuduğu JSON satırları olarak yazılır.
+Options: `--name` (home screen name), `--bios SCPH1001.BIN` (optional;
+OpenBIOS is used otherwise), `--generic` (ignore curated profiles),
+`--bundle-prefix`, `--work`, `--out`. Without `--human`, progress is printed
+as JSON lines in the format HookLink and NX2Apple parse.
 
-### Mac gereksinimleri
+### Mac requirements
 
-- Xcode (iOS SDK), Apple Developer takım kimliği (ücretsiz Personal Team de olur)
+- Xcode (iOS SDK) and an Apple Developer team ID (a free Personal Team works)
 - `brew install cmake ninja git`, `pip3 install numpy pillow`
-- LunarG Vulkan SDK (`glslc` + `MoltenVK.xcframework`), `VULKAN_SDK` ayarlı
-- iPhone: iOS 16+, Geliştirici Modu açık
+- LunarG Vulkan SDK (`glslc` + `MoltenVK.xcframework`), with `VULKAN_SDK` set
+- iPhone: iOS 16+, Developer Mode on
 
-## Dosyalar
+## Files
 
-| Yol | Ne |
+| Path | What |
 |---|---|
-| `ps1ios/ingest.py` | Güvenli zip açma (zip-slip, link, boyut sınırı), disk bulma, eksik cue üretme, büyük/küçük harf düzeltme |
-| `ps1ios/disc.py` | ISO9660 okuma, SYSTEM.CNF, BOOT, PS-X EXE başlığı, seri no ve bölge |
-| `ps1ios/pipeline.py` | Hazır/genel proje, yamalar, generate, Xcode, imza, IPA, kurulum |
-| `ios/` | iOS katmanı: `ios_platform.mm` (Belgeler klasörü, disk bulma, dokunmatik kumanda, AOT dışı derlemeyi kapatma), `ios.cmake`, `Info.plist.in`, psxrecomp yaması |
-| `profiles/` | Hazır projeler |
-| `tests/` | Sentetik disklerle birim testleri (oyun verisi yok) |
+| `ps1ios/ingest.py` | Safe zip extraction (zip-slip, links, size caps), disc discovery, cue generation for lone bins, filename case fixes |
+| `ps1ios/disc.py` | ISO9660 reading, SYSTEM.CNF, BOOT, PS-X EXE header, serial and region |
+| `ps1ios/pipeline.py` | Curated/generic project, patches, generate, Xcode, signing, IPA, install |
+| `ios/` | iOS layer: `ios_platform.mm` (Documents game folder, disc discovery, touch pad, run-time compile off), `ios.cmake`, `Info.plist.in`, psxrecomp patch |
+| `profiles/` | Curated projects |
+| `tests/` | Unit tests on synthetic discs (no game data) |
 
-## Durum
+## Status
 
-- Doğrulanan: zip alma, disk tanıma, hazır/genel proje seçimi, CLI. Sentetik disklerle 10 test.
-  psxrecomp yaması hem temiz psxrecomp'a (2a4824f) hem Hercules yamalı haline uygulanabiliyor.
-- **Henüz doğrulanmayan:** Mac'te iOS derlemesi, imza ve cihazda çalışma.
-  İlk Mac derlemesinde bakılacaklar: masaüstü OpenGL çizicisinin iOS'ta derlenip
-  derlenmediği (derlenmezse iOS'ta kapatılır, Vulkan/MoltenVK ya da yazılımsal
-  çizim kullanılır), SDL3'ün iOS açılışı, gömülü MoltenVK'nın yüklenmesi.
-- Kare hızı oyunun kendi hızıyla sınırlı. Çoğu PS1 oyunu 30 ya da 60 Hz'de
-  adım atar; port bunu artırmaz.
+- Verified: zip ingestion, disc identification, curated/generic project
+  selection, CLI. 10 tests on synthetic discs. The psxrecomp patch applies to
+  both clean psxrecomp (2a4824f) and the Hercules-patched tree.
+- **Not yet verified:** the iOS build on a Mac, signing, and running on a
+  device. Things to check on the first Mac build: whether the desktop OpenGL
+  renderer compiles for iOS (if not, it is switched off on iOS and
+  Vulkan/MoltenVK or the software renderer is used), SDL3's iOS startup, and
+  loading the embedded MoltenVK.
+- Frame rate is capped by the game itself. Most PS1 games step at 30 or 60 Hz;
+  the port does not raise that.
+- PS1 only. Despite the repository name, PS2 games are not supported.
