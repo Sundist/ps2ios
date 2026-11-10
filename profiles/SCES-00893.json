@@ -1,0 +1,19 @@
+{
+  "serial": "SCES-00893",
+  "title": "Hercules (German, PAL)",
+  "display_name": "Hercules",
+  "source": {
+    "repo": "https://github.com/obaidr1/hercules-recompiled",
+    "commit": "9df37864f6e5d50e30ff7381117e34a06a1a04c0"
+  },
+  "project_dir": "port",
+  "psxrecomp_dir": "port/psxrecomp",
+  "patches_dir": "port/patches/psxrecomp",
+  "gamedata": [
+    "port/game.toml",
+    "port/game_options.toml",
+    "port/mods",
+    "port/assets"
+  ],
+  "notes": "Curated project: full AOT overlay coverage, widescreen/HD/level-select mods. US/JP releases are not supported by it."
+}

@@ -1,0 +1,25 @@
+--- a/runtime/src/main.cpp
++++ b/runtime/src/main.cpp
+@@ -2729,10 +2729,22 @@
+ // authoritative source (independent of argv[0], which can be relative/bare and
+ // would otherwise get resolved against cwd by fs::absolute). $APPIMAGE and
+ // argv[0] are non-Windows / fallback sources only.
++#if defined(__APPLE__)
++#  include <TargetConditionals.h>
++#endif
++#if defined(__APPLE__) && TARGET_OS_IPHONE
++extern "C" const char *ps1ios_data_dir(void);  /* ios/src/ios_platform.mm */
++#endif
+ static std::filesystem::path exe_dir_from_argv(const char* argv0) {
+     namespace fs = std::filesystem;
+     std::error_code ec;
+     fs::path exe_dir;
++#if defined(__APPLE__) && TARGET_OS_IPHONE
++    // The app bundle is read-only and signed: the game folder (settings,
++    // disc.cfg, saves, mods) is the app's Documents container instead.
++    (void)argv0; (void)ec;
++    return fs::path(ps1ios_data_dir());
++#endif
+ #ifdef _WIN32
+     // Authoritative: the real image path, regardless of how we were invoked.
+     {

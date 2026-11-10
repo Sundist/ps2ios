@@ -1,0 +1,12 @@
+build/
+*.ipa
+__pycache__/
+*.pyc
+.DS_Store
+# never commit game data
+*.bin
+*.cue
+*.chd
+*.iso
+*.img
+*.zip
