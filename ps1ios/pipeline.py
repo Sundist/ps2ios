@@ -255,6 +255,8 @@ class Build:
         bdir = os.path.join(self.work, "xcode")
         cmd = ["cmake", "-S", proj, "-B", bdir, "-G", "Xcode",
                "-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0",
+               # one configuration: psxrecomp's build stamps files per configuration
+               "-DCMAKE_CONFIGURATION_TYPES=Release", "-DCMAKE_BUILD_TYPE=Release",
                f"-DCMAKE_PROJECT_INCLUDE={IOS_DIR}/ios.cmake",
                f"-DPS1IOS_TEAM={self.a.team}", f"-DPS1IOS_BUNDLE_ID={bundle}", f"-DPS1IOS_RENDERER={self.renderer}",
                f"-DPS1IOS_DISPLAY_NAME={display}", f"-DPS1IOS_GAMEDATA={gd}"]
