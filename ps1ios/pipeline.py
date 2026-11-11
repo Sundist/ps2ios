@@ -207,14 +207,19 @@ class Build:
         os.makedirs(parent, exist_ok=True)
         proj = os.path.join(parent, repo)
         if not os.path.isdir(proj):
+            # The scaffold adds psxrecomp as a submodule by branch name; point it at
+            # the local clone with a branch on the pinned commit.
+            run(["git", "-C", recomp, "branch", "-f", "ps1ios-pin", PSXRECOMP_PIN], self.ev)
+            env = {"PSXRECOMP_URL": recomp, "GIT_CONFIG_COUNT": "1",
+                   "GIT_CONFIG_KEY_0": "protocol.file.allow", "GIT_CONFIG_VALUE_0": "always"}
             cmd = ["sh", os.path.join(recomp, "tools/new_project_layout/setup_project.sh"), "--yes",
                    "--name", name, "--disc", os.path.abspath(ing.primary.entry), "--dir", parent,
-                   "--github-repo", repo, "--players", "1", "--psxrecomp-ref", PSXRECOMP_PIN,
+                   "--github-repo", repo, "--players", "1", "--psxrecomp-ref", "ps1ios-pin",
                    "--no-recomp-ui", "--no-netplay", "--no-wizard", "--no-ci", "--no-fetch-boxart",
                    "--no-github", "--no-build", "--generate"]
             if self.a.bios:
                 cmd += ["--bios", os.path.abspath(self.a.bios)]
-            run(cmd, self.ev, cwd=parent)
+            run(cmd, self.ev, cwd=parent, env=env)
         self.recomp_dir = os.path.join(proj, "psxrecomp")
         return proj
 
