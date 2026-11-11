@@ -58,6 +58,16 @@ jobs:
           python -m ps1ios build "disc/PS1 Test ROM.zip" --target simulator \
             --renderer "${{ github.event.inputs.renderer || 'software' }}" \
             --run-seconds 45 --name "PS1 Test" --work build --out out --human
+      - name: Screenshot into the log (base64, downscaled)
+        if: always()
+        run: |
+          for f in out/*.png; do
+            [ -f "$f" ] || continue
+            sips -Z 900 "$f" --out shot_small.png >/dev/null
+            echo "=== BEGIN SCREENSHOT $(basename "$f") ==="
+            base64 -i shot_small.png | fold -w 180
+            echo "=== END SCREENSHOT ==="
+          done
       - name: Save cache (also after a failed build)
         if: always()
         uses: actions/cache/save@v4

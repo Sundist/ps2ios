@@ -246,6 +246,15 @@ class Build:
                 shutil.copytree(it, os.path.join(gd, os.path.basename(it)), dirs_exist_ok=True)
             elif os.path.isfile(it):
                 shutil.copy2(it, gd)
+        # The bundled OpenBIOS the recompiled backend was built from; the runtime
+        # looks for it at bios/openbios.bin in its game folder (Documents on iOS).
+        os.makedirs(os.path.join(gd, "bios"), exist_ok=True)
+        for f in ("openbios.bin", "OpenBIOS.LICENSE"):
+            src = os.path.join(self.recomp_dir, "bios", f)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(gd, "bios", f))
+            else:
+                self.ev.say(f"warning: {src} not found")
         toml = os.path.join(gd, "game.toml")
         if os.path.isfile(toml):
             set_toml_renderer(toml, self.renderer)
@@ -360,8 +369,17 @@ class Build:
             run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
             alive = proc.poll() is None
             proc.terminate()
+        for label, root in (("app bundle", app), ("Documents", os.path.join(data, "Documents"))):
+            files = []
+            for dp, dn, fn in os.walk(root):
+                dn[:] = [d for d in dn if not d.endswith((".lproj", "_CodeSignature"))]
+                for n in fn:
+                    rel = os.path.relpath(os.path.join(dp, n), root)
+                    if rel.count(os.sep) <= 2:
+                        files.append(rel)
+            self.ev.say(f"{label}: " + ", ".join(sorted(files)[:80]))
         with open(log_path, errors="replace") as f:
-            tail = f.read().splitlines()[-40:]
+            tail = f.read().splitlines()[-60:]
         for ln in tail:
             self.ev.say("app: " + ln)
         if not alive:
