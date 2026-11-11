@@ -28,7 +28,8 @@ function(ps1ios_finalize)
     if(NOT TARGET psx-runtime)
         message(FATAL_ERROR "ps1ios: psx-runtime target not found in this project")
     endif()
-    target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/src/ios_platform.mm")
+    target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/src/ios_platform.mm" "${PS1IOS_DIR}/src/pad_layout.c")
+    set_source_files_properties("${PS1IOS_DIR}/src/ios_platform.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_include_directories(psx-runtime PRIVATE "${PS1IOS_DIR}/src")
     target_link_libraries(psx-runtime PRIVATE
         "-framework UIKit" "-framework GameController" "-framework Metal"
@@ -46,14 +47,24 @@ function(ps1ios_finalize)
         XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "16.0"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
         XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
+        XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${PS1IOS_DIR}/App.entitlements"
         XCODE_ATTRIBUTE_GCC_OPTIMIZATION_LEVEL "3"
         XCODE_ATTRIBUTE_LLVM_LTO "YES_THIN"
         XCODE_ATTRIBUTE_DEAD_CODE_STRIPPING "YES")
+    # GameData (game.toml, mods, assets) and the Settings.bundle (touch pad size,
+    # opacity, haptics in the iOS Settings app) are copied into the bundle after
+    # linking; Xcode signs the whole bundle afterwards.
     if(PS1IOS_GAMEDATA)
-        target_sources(psx-runtime PRIVATE "${PS1IOS_GAMEDATA}")
-        set_source_files_properties("${PS1IOS_GAMEDATA}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        add_custom_command(TARGET psx-runtime POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${PS1IOS_GAMEDATA}"
+                    "$<TARGET_BUNDLE_CONTENT_DIR:psx-runtime>/GameData"
+            COMMENT "ps1ios: GameData")
     endif()
+    add_custom_command(TARGET psx-runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${PS1IOS_DIR}/Settings.bundle"
+                "$<TARGET_BUNDLE_CONTENT_DIR:psx-runtime>/Settings.bundle"
+        COMMENT "ps1ios: Settings.bundle")
     if(PS1IOS_MOLTENVK)
         # SDL_Vulkan_LoadLibrary(NULL) on iOS loads MoltenVK from the app's Frameworks/.
         set_target_properties(psx-runtime PROPERTIES

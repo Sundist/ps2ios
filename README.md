@@ -75,6 +75,32 @@ as JSON lines in the format HookLink and NX2Apple parse.
 - LunarG Vulkan SDK (`glslc` + `MoltenVK.xcframework`), with `VULKAN_SDK` set
 - iPhone: iOS 16+, Developer Mode on
 
+## Touch controls
+
+![Touch layout on an iPhone 13 Pro Max, drawn from pad_layout.c](docs/touch-layout.png)
+
+*Layout drawing generated from the app's own layout code (`tools/render_pad_layout.py`),
+not a game screenshot. The white frame is the 4:3 game picture, the yellow one the safe area.*
+
+- **Out of the picture:** both thumb clusters, the shoulders and Select/Start sit in the
+  side strips left over by the 4:3 picture, against the safe-area edge. On an iPhone
+  13/14/15 Pro Max nothing covers the game. On narrower phones (e.g. 13 mini) the face
+  buttons overlap the picture's edge by a few points, so targets stay full size.
+- **D-pad you can roll on:** one control read by angle, 8 directions, a centre dead
+  zone; diagonals are narrower (30°) than cardinals (60°) so running does not slip into
+  a diagonal. The thumb can slide between directions without lifting.
+- **Face buttons:** a diamond; a touch between two neighbours presses both (Cross+Square).
+- **L1/L2/R1/R2** (L2/R2 as full triggers) and **Select/Start**; every target ≥ 44 pt
+  with a hit area larger than its drawing.
+- **Feel:** a light haptic tap on each new button and a tick when the d-pad changes
+  direction; input goes to the game on the touch event itself; pressed controls light
+  up; the pad brightens while touched; iOS edge swipes are deferred so a thumb near
+  the edge is not taken by the system.
+- **Settings app → the game:** pad size (0.8–1.3), opacity, haptics, and whether to
+  keep the pad when a controller is connected (hidden by default).
+- Layout and hit testing are plain C (`ios/src/pad_layout.c`), unit-tested on Linux
+  for four iPhone sizes (`tests/test_pad_layout.py`).
+
 ## Files
 
 | Path | What |
@@ -82,14 +108,16 @@ as JSON lines in the format HookLink and NX2Apple parse.
 | `ps1ios/ingest.py` | Safe zip extraction (zip-slip, links, size caps), disc discovery, cue generation for lone bins, filename case fixes |
 | `ps1ios/disc.py` | ISO9660 reading, SYSTEM.CNF, BOOT, PS-X EXE header, serial and region |
 | `ps1ios/pipeline.py` | Curated/generic project, patches, generate, Xcode, signing, IPA, install |
-| `ios/` | iOS layer: `ios_platform.mm` (Documents game folder, disc discovery, touch pad, run-time compile off), `ios.cmake`, `Info.plist.in`, psxrecomp patch |
+| `ios/` | iOS layer: `ios_platform.mm` (Documents game folder, disc discovery, touch pad, run-time compile off), `pad_layout.c` (touch layout + hit testing), `Settings.bundle`, `ios.cmake`, `Info.plist.in`, psxrecomp patch |
+| `tools/render_pad_layout.py` | Draws the touch layout from `pad_layout.c` |
 | `profiles/` | Curated projects |
 | `tests/` | Unit tests on synthetic discs (no game data) |
 
 ## Status
 
 - Verified: zip ingestion, disc identification, curated/generic project
-  selection, CLI. 10 tests on synthetic discs. The psxrecomp patch applies to
+  selection, CLI (10 tests on synthetic discs); touch layout and hit testing
+  (4 tests, compiled from the same C file the app uses). The psxrecomp patch applies to
   both clean psxrecomp (2a4824f) and the Hercules-patched tree.
 - **Not yet verified:** the iOS build on a Mac, signing, and running on a
   device. Things to check on the first Mac build: whether the desktop OpenGL
