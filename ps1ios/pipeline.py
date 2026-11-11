@@ -104,6 +104,32 @@ def find_glslc() -> str | None:
     return None
 
 
+def set_toml_renderer(path: str, renderer: str) -> None:
+    """Sets [video] renderer in a game.toml (adds the section or key if missing)."""
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    out, in_video, done = [], False, False
+    for ln in lines:
+        st = ln.strip()
+        if st.startswith("[") and st.endswith("]"):
+            if in_video and not done:
+                out.append(f'renderer = "{renderer}"')
+                done = True
+            in_video = st == "[video]"
+        elif in_video and re.match(r"renderer\s*=", st):
+            out.append(f'renderer = "{renderer}"')
+            done = True
+            continue
+        out.append(ln)
+    if in_video and not done:
+        out.append(f'renderer = "{renderer}"')
+        done = True
+    if not done:
+        out += ["", "[video]", f'renderer = "{renderer}"']
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+
+
 class Build:
     def __init__(self, args, ev: Events):
         self.a = args
@@ -121,12 +147,18 @@ class Build:
             import numpy, PIL  # noqa: F401  (psxrecomp's generate needs them)
         except ImportError:
             raise PipelineError("python3 needs numpy and Pillow: pip3 install numpy pillow")
-        if not self.a.team:
-            raise PipelineError("--team (Apple Developer team ID) is required to sign")
+        self.signed = self.a.target == "device" and not self.a.unsigned
+        if self.signed and not self.a.team:
+            raise PipelineError("--team (Apple Developer team ID) is required to sign; "
+                                "or use --unsigned (IPA for AltStore/Sideloadly) or --target simulator")
         self.glslc = find_glslc()
         self.mvk = find_moltenvk()
-        if not self.glslc or not self.mvk:
-            raise PipelineError("Vulkan SDK not found: install LunarG's SDK and set VULKAN_SDK (glslc + MoltenVK)")
+        have_vk = bool(self.glslc and self.mvk)
+        if self.a.renderer == "vulkan" and not have_vk:
+            raise PipelineError("--renderer vulkan needs LunarG's Vulkan SDK (glslc + MoltenVK) with VULKAN_SDK set")
+        self.renderer = self.a.renderer if self.a.renderer != "auto" else ("vulkan" if have_vk else "software")
+        if self.a.renderer == "auto" and not have_vk:
+            self.ev.say("Vulkan SDK not found: building with the software renderer (set VULKAN_SDK for Vulkan/Metal)")
         out = subprocess.run(["xcodebuild", "-version"], capture_output=True, text=True).stdout.splitlines()
         self.ev.say(out[0] if out else "xcodebuild")
 
@@ -209,20 +241,41 @@ class Build:
                 shutil.copytree(it, os.path.join(gd, os.path.basename(it)), dirs_exist_ok=True)
             elif os.path.isfile(it):
                 shutil.copy2(it, gd)
+        toml = os.path.join(gd, "game.toml")
+        if os.path.isfile(toml):
+            set_toml_renderer(toml, self.renderer)
         return gd
 
     def configure(self, proj: str, gd: str, display: str, bundle: str) -> str:
         bdir = os.path.join(self.work, "xcode")
-        run(["cmake", "-S", proj, "-B", bdir, "-G", "Xcode",
-             "-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0",
-             f"-DCMAKE_PROJECT_INCLUDE={IOS_DIR}/ios.cmake", f"-DGLSLC_EXE={self.glslc}",
-             f"-DPS1IOS_TEAM={self.a.team}", f"-DPS1IOS_BUNDLE_ID={bundle}",
-             f"-DPS1IOS_DISPLAY_NAME={display}", f"-DPS1IOS_GAMEDATA={gd}", f"-DPS1IOS_MOLTENVK={self.mvk}"],
-            self.ev, quiet=True)
+        cmd = ["cmake", "-S", proj, "-B", bdir, "-G", "Xcode",
+               "-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0",
+               f"-DCMAKE_PROJECT_INCLUDE={IOS_DIR}/ios.cmake",
+               f"-DPS1IOS_TEAM={self.a.team}", f"-DPS1IOS_BUNDLE_ID={bundle}", f"-DPS1IOS_RENDERER={self.renderer}",
+               f"-DPS1IOS_DISPLAY_NAME={display}", f"-DPS1IOS_GAMEDATA={gd}"]
+        if self.a.target == "simulator":
+            cmd.append("-DCMAKE_OSX_SYSROOT=iphonesimulator")
+        if self.renderer == "vulkan":
+            cmd += [f"-DGLSLC_EXE={self.glslc}", f"-DPS1IOS_MOLTENVK={self.mvk}"]
+        run(cmd, self.ev, quiet=True)
         xp = glob.glob(os.path.join(bdir, "*.xcodeproj"))
         if not xp:
             raise PipelineError("cmake did not produce an Xcode project")
         return xp[0]
+
+    def build_unsigned(self, xcodeproj: str) -> str:
+        """Simulator build, or an unsigned device build for sideloading tools that re-sign."""
+        sdk = "iphonesimulator" if self.a.target == "simulator" else "iphoneos"
+        dd = os.path.join(self.work, "DerivedData")
+        run(["xcodebuild", "-project", xcodeproj, "-scheme", "psx-runtime", "-configuration", "Release",
+             "-sdk", sdk, "-derivedDataPath", dd, "CODE_SIGNING_ALLOWED=NO", "CODE_SIGNING_REQUIRED=NO",
+             "CODE_SIGN_IDENTITY=", "build"], self.ev, quiet=True)
+        apps = [p for p in glob.glob(os.path.join(self.work, "**", "PS1Game.app"), recursive=True)
+                if f"-{sdk}" in p]
+        if not apps:
+            raise PipelineError(f"build produced no PS1Game.app; open {xcodeproj} in Xcode for the full log")
+        apps.sort(key=os.path.getmtime)
+        return apps[-1]
 
     def archive(self, xcodeproj: str) -> str:
         arch = os.path.join(self.work, "PS1Game.xcarchive")
@@ -260,13 +313,57 @@ class Build:
                      "--destination", f"Documents/disc/{f}", "--domain-type", "appDataContainer",
                      "--domain-identifier", bundle], self.ev)
 
+    def run_simulator(self, app: str, bundle: str, ing) -> str:
+        """Boots an iPhone simulator, installs the app, copies the disc in, starts the
+        game and saves a screenshot after --run-seconds."""
+        import time
+        devs = json.loads(subprocess.run(["xcrun", "simctl", "list", "devices", "available", "-j"],
+                                         capture_output=True, text=True, check=True).stdout)["devices"]
+        cands = [(rt, d) for rt, ds in devs.items() if "iOS" in rt for d in ds if d["name"].startswith("iPhone")]
+        if not cands:
+            raise PipelineError("no iPhone simulator available (Xcode > Settings > Components)")
+        pro_max = [c for c in cands if "Pro Max" in c[1]["name"]]
+        rt, dev = sorted(pro_max or cands, key=lambda c: c[0])[-1]
+        udid = dev["udid"]
+        self.ev.say(f"simulator: {dev['name']} ({rt.rsplit('.', 1)[-1]})")
+        subprocess.run(["xcrun", "simctl", "boot", udid], capture_output=True)
+        run(["xcrun", "simctl", "bootstatus", udid, "-b"], self.ev, quiet=True)
+        run(["xcrun", "simctl", "install", udid, app], self.ev)
+        data = subprocess.run(["xcrun", "simctl", "get_app_container", udid, bundle, "data"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        ddir = os.path.join(data, "Documents", "disc")
+        os.makedirs(ddir, exist_ok=True)
+        for disc in ing.discs:
+            src = os.path.dirname(disc.entry)
+            for f in os.listdir(src):
+                if os.path.isfile(os.path.join(src, f)):
+                    shutil.copy2(os.path.join(src, f), ddir)
+        subprocess.run(["xcrun", "simctl", "ui", udid, "appearance", "dark"], capture_output=True)
+        log_path = os.path.join(self.work, "simulator.log")
+        with open(log_path, "w") as log:
+            proc = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process",
+                                     udid, bundle], stdout=log, stderr=subprocess.STDOUT)
+            time.sleep(self.a.run_seconds)
+            shot = os.path.join(self.a.out or self.work, f"{slug(self.name)}-simulator.png")
+            run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
+            alive = proc.poll() is None
+            proc.terminate()
+        with open(log_path, errors="replace") as f:
+            tail = f.read().splitlines()[-40:]
+        for ln in tail:
+            self.ev.say("app: " + ln)
+        if not alive:
+            raise PipelineError(f"the app exited within {self.a.run_seconds}s (log: {log_path}, screenshot: {shot})")
+        return shot
+
     # ------------------------------------------------------------ main
     def run(self) -> str:
         ev = self.ev
-        steps = 9 + (1 if self.a.device else 0)
-        ev.total = steps
+        sim = self.a.target == "simulator"
+        ev.total = 9 + (1 if (self.a.device or (sim and self.a.run_seconds > 0)) else 0)
         with ev.stage("check this Mac"):
             self.check_mac()
+            ev.summary = f"target {self.a.target}, renderer {self.renderer}, {'signed' if self.signed else 'unsigned'}"
         with ev.stage("unpack zip and find the disc"):
             ing = self.ingest()
             ev.summary = os.path.basename(ing.primary.entry)
@@ -278,6 +375,7 @@ class Build:
             ev.summary = f"{serial or 'unknown serial'}"
         prof = None if self.a.generic else load_profile(serial)
         name = self.a.name or (prof["display_name"] if prof else (serial or "PS1 Game"))
+        self.name = name
         bundle = self.a.bundle_id or f"com.{slug(self.a.bundle_prefix or 'ps1ios')}.{slug(serial or name)}".replace("-", "")
         with ev.stage("make the recompilation project"):
             if prof:
@@ -299,14 +397,22 @@ class Build:
             gd = self.stage_gamedata(proj, prof)
             xp = self.configure(proj, gd, name, bundle)
             ev.summary = xp
-        with ev.stage("build and sign"):
-            app = self.archive(xp)
+        with ev.stage("build" + (" and sign" if self.signed else " (unsigned)")):
+            app = self.archive(xp) if self.signed else self.build_unsigned(xp)
             ev.summary = app
-        with ev.stage("ipa"):
-            ipa = self.ipa(app, name)
-            ev.summary = ipa
-        if self.a.device:
+        result = app
+        with ev.stage("package"):
+            if sim:
+                ev.summary = "simulator app (no IPA)"
+            else:
+                result = self.ipa(app, name)
+                ev.summary = result + ("" if self.signed else " (unsigned: re-sign with AltStore/Sideloadly)")
+        if self.a.device and self.signed:
             with ev.stage("install and copy the disc to the iPhone"):
                 self.install(app, bundle, ing)
                 ev.summary = bundle
-        return ipa
+        elif sim and self.a.run_seconds > 0:
+            with ev.stage("run in the iPhone simulator"):
+                result = self.run_simulator(app, bundle, ing)
+                ev.summary = result
+        return result

@@ -174,6 +174,23 @@ class IngestProbeTests(unittest.TestCase):
                                        capture_output=True, text=True).stdout)
         self.assertEqual(j2["project"]["kind"], "generic")
 
+    def test_set_toml_renderer(self):
+        from ps1ios.pipeline import set_toml_renderer
+        p = os.path.join(self.d, "game.toml")
+        cases = [
+            ('[game]\nname = "x"\n', '[video]\nrenderer = "software"'),
+            ('[video]\nrenderer = "opengl"\naspect_ratio = "4:3"\n', 'renderer = "software"\naspect_ratio'),
+            ('[video]\naspect_ratio = "4:3"\n[controller]\n', 'aspect_ratio = "4:3"\nrenderer = "software"\n[controller]'),
+        ]
+        for src, want in cases:
+            with open(p, "w") as f:
+                f.write(src)
+            set_toml_renderer(p, "software")
+            with open(p) as f:
+                got = f.read()
+            self.assertIn(want, got)
+            self.assertEqual(got.count("renderer ="), 1)
+
     @unittest.skipIf(sys.platform == "darwin", "Mac check only meaningful off macOS")
     def test_build_fails_cleanly_without_xcode(self):
         zp = self.z({"h.bin": to_raw(psx_disc())})

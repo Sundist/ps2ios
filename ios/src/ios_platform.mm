@@ -14,20 +14,59 @@
 
 static std::string g_data_dir;
 
-static void copy_tree_if_missing(NSString *from, NSString *to) {
+// Copies a file or folder tree. Existing files are replaced only when
+// `overwrite` is set (files that ship with the app), never otherwise (saves,
+// settings, the user's disc).
+static void copy_tree(NSString *from, NSString *to, BOOL overwrite) {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSDirectoryEnumerator *en = [fm enumeratorAtPath:from];
-    for (NSString *rel in en) {
+    BOOL isDir = NO;
+    if (![fm fileExistsAtPath:from isDirectory:&isDir]) return;
+    if (!isDir) {
+        if ([fm fileExistsAtPath:to]) {
+            if (!overwrite) return;
+            [fm removeItemAtPath:to error:nil];
+        }
+        [fm createDirectoryAtPath:to.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+        [fm copyItemAtPath:from toPath:to error:nil];
+        return;
+    }
+    [fm createDirectoryAtPath:to withIntermediateDirectories:YES attributes:nil error:nil];
+    for (NSString *rel in [fm enumeratorAtPath:from]) {
         NSString *src = [from stringByAppendingPathComponent:rel];
         NSString *dst = [to stringByAppendingPathComponent:rel];
-        BOOL dir = NO;
-        [fm fileExistsAtPath:src isDirectory:&dir];
-        if (dir) {
+        BOOL d = NO;
+        [fm fileExistsAtPath:src isDirectory:&d];
+        if (d) {
             [fm createDirectoryAtPath:dst withIntermediateDirectories:YES attributes:nil error:nil];
-        } else if (![fm fileExistsAtPath:dst]) {
+        } else if (![fm fileExistsAtPath:dst] || overwrite) {
+            [fm removeItemAtPath:dst error:nil];
             [fm copyItemAtPath:src toPath:dst error:nil];
         }
     }
+}
+
+// What the psxrecomp build stages beside the executable (inside the .app on
+// iOS) and the runtime reads from its game folder (Documents on iOS).
+static NSArray<NSString *> *bundled_runtime_items(void) {
+    return @[@"game.toml", @"game_options.toml", @"assets", @"bios", @"mods", @"licenses",
+             @"psx_game_version.txt"];
+}
+
+// Refreshes the shipped files in Documents once per app build (keyed by the
+// executable's modification date), so an update brings new game files while
+// saves and settings stay.
+static void sync_bundle(NSString *docs) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSString *res = NSBundle.mainBundle.resourcePath;
+    NSDate *built = [fm attributesOfItemAtPath:NSBundle.mainBundle.executablePath error:nil].fileModificationDate;
+    NSString *stamp = [NSString stringWithFormat:@"%.0f", built.timeIntervalSince1970];
+    NSString *stampPath = [docs stringByAppendingPathComponent:@".ps1ios_bundle_stamp"];
+    NSString *old = [NSString stringWithContentsOfFile:stampPath encoding:NSUTF8StringEncoding error:nil];
+    BOOL refresh = ![old isEqualToString:stamp];
+    for (NSString *item in bundled_runtime_items())
+        copy_tree([res stringByAppendingPathComponent:item], [docs stringByAppendingPathComponent:item], refresh);
+    copy_tree([res stringByAppendingPathComponent:@"GameData"], docs, refresh);
+    if (refresh) [stamp writeToFile:stampPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 static void write_disc_cfg_if_missing(NSString *docs) {
@@ -54,8 +93,7 @@ extern "C" const char *ps1ios_data_dir(void) {
     if (!g_data_dir.empty()) return g_data_dir.c_str();
     @autoreleasepool {
         NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-        NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"GameData"];
-        copy_tree_if_missing(bundled, docs);
+        sync_bundle(docs);
         // Large, re-creatable data must not go to iCloud backup.
         NSURL *mods = [NSURL fileURLWithPath:[docs stringByAppendingPathComponent:@"mods"]];
         [mods setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];

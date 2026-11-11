@@ -1,0 +1,69 @@
+name: ios-app
+# End to end: build the original test ROM (testrom/), turn its disc zip into an
+# iOS app with ps1ios, run it in the iPhone simulator and keep a screenshot.
+# Uses no commercial game data.
+on:
+  workflow_dispatch:
+    inputs:
+      renderer:
+        description: "software or vulkan"
+        default: software
+  push:
+    branches: [main]
+    paths: ["ps1ios/**", "ios/**", "testrom/**", ".github/workflows/ios-app.yml"]
+
+jobs:
+  testrom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-mipsel-linux-gnu
+      - run: testrom/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: testrom-disc
+          path: testrom/build/PS1 Test ROM.zip
+
+  simulator:
+    needs: testrom
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: testrom-disc
+          path: disc
+      - name: Tools
+        run: |
+          brew install ninja || true
+          python -m pip install numpy pillow
+          xcodebuild -version
+          xcrun simctl list runtimes
+      - name: zip -> iOS app (simulator) -> run
+        run: |
+          python -m ps1ios build "disc/PS1 Test ROM.zip" --target simulator \
+            --renderer "${{ github.event.inputs.renderer || 'software' }}" \
+            --run-seconds 45 --name "PS1 Test" --work build --out out --human
+      - name: Keep results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-results
+          path: |
+            out/
+            build/simulator.log
+            build/disc_probe.json
+          if-no-files-found: warn
+      - name: Keep build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build/src/*/build*/CMakeFiles/*.log
+            build/xcode/CMakeFiles/*.log
+          if-no-files-found: ignore

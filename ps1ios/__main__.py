@@ -2,6 +2,8 @@
 
   python3 -m ps1ios inspect game.zip
   python3 -m ps1ios build game.zip --team ABCDE12345 [--device <id>] [--name "My Game"]
+  python3 -m ps1ios build game.zip --target simulator --run-seconds 30
+  python3 -m ps1ios build game.zip --unsigned
 """
 from __future__ import annotations
 
@@ -53,6 +55,14 @@ def main(argv=None) -> int:
     b.add_argument("--generic", action="store_true", help="ignore curated profiles")
     b.add_argument("--work", default="build", help="work folder (default ./build)")
     b.add_argument("--out", default="", help="folder for the .ipa (default: work folder)")
+    b.add_argument("--target", choices=["device", "simulator"], default="device",
+                   help="device (iPhone) or the iOS simulator (no Apple account needed)")
+    b.add_argument("--unsigned", action="store_true",
+                   help="device build without signing: an IPA for AltStore/Sideloadly to re-sign")
+    b.add_argument("--renderer", choices=["auto", "vulkan", "software"], default="auto",
+                   help="vulkan = MoltenVK/Metal (needs the Vulkan SDK); software = CPU renderer; auto picks vulkan if found")
+    b.add_argument("--run-seconds", type=int, default=0,
+                   help="simulator: start the game, wait this long, save a screenshot")
     b.add_argument("--human", action="store_true", help="readable progress instead of JSON lines")
     b.set_defaults(fn=None)
     a = ap.parse_args(argv)
