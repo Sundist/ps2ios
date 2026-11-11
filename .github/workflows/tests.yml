@@ -1,6 +1,7 @@
 name: tests
 on: [push, pull_request]
 jobs:
+  # Python and C unit tests (zip ingestion, disc probing, touch layout).
   unit:
     runs-on: ubuntu-latest
     steps:
@@ -9,3 +10,31 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -W error::ResourceWarning -m unittest discover -s tests -v
+
+  # Compiles this repo's own iOS sources against the iOS SDK (Xcode) and the SDL3
+  # psxrecomp pins. A full app build needs a disc dump and a signing team, so
+  # it cannot run in CI; this catches compile errors in the iOS layer.
+  ios-compile:
+    runs-on: macos-latest
+    env:
+      SDL3_URL: https://github.com/libsdl-org/SDL/releases/download/release-3.4.10/SDL3-3.4.10.tar.gz
+      SDL3_SHA256: 12b34280415ec8418c864408b93d008a20a6530687ee613d60bfbd20411f2785
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDL3 headers (version pinned by psxrecomp)
+        run: |
+          curl -fsSL -o sdl3.tar.gz "$SDL3_URL"
+          echo "$SDL3_SHA256  sdl3.tar.gz" | shasum -a 256 -c -
+          mkdir sdl3 && tar -xzf sdl3.tar.gz -C sdl3 --strip-components=1
+      - name: Compile iOS layer (arm64, iOS 16)
+        run: |
+          xcodebuild -version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=16.0 -Isdl3/include -Iios/src -Wall -Wextra -Werror"
+          xcrun --sdk iphoneos clang $FLAGS -std=c99 -c ios/src/pad_layout.c -o pad_layout.o
+          xcrun --sdk iphoneos clang++ $FLAGS -std=c++17 -fobjc-arc -Wno-unused-parameter -c ios/src/ios_platform.mm -o ios_platform.o
+          ls -la *.o
+      - name: CMake fragment parses
+        run: cmake -P /dev/stdin <<< 'set(CMAKE_SYSTEM_NAME Linux)
+          include(ios/ios.cmake)
+          message(STATUS "ios.cmake ok")'
