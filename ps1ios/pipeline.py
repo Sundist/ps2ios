@@ -104,30 +104,35 @@ def find_glslc() -> str | None:
     return None
 
 
-def set_toml_renderer(path: str, renderer: str) -> None:
-    """Sets [video] renderer in a game.toml (adds the section or key if missing)."""
+def set_toml_key(path: str, section: str, key: str, value: str) -> None:
+    """Sets `key = "value"` in [section] of a TOML file (adds the section or key if missing)."""
     with open(path, encoding="utf-8") as f:
         lines = f.read().splitlines()
-    out, in_video, done = [], False, False
+    out, inside, done = [], False, False
+    line = f'{key} = "{value}"'
     for ln in lines:
         st = ln.strip()
         if st.startswith("[") and st.endswith("]"):
-            if in_video and not done:
-                out.append(f'renderer = "{renderer}"')
+            if inside and not done:
+                out.append(line)
                 done = True
-            in_video = st == "[video]"
-        elif in_video and re.match(r"renderer\s*=", st):
-            out.append(f'renderer = "{renderer}"')
+            inside = st == f"[{section}]"
+        elif inside and re.match(rf"{re.escape(key)}\s*=", st):
+            out.append(line)
             done = True
             continue
         out.append(ln)
-    if in_video and not done:
-        out.append(f'renderer = "{renderer}"')
+    if inside and not done:
+        out.append(line)
         done = True
     if not done:
-        out += ["", "[video]", f'renderer = "{renderer}"']
+        out += ["", f"[{section}]", line]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
+
+
+def set_toml_renderer(path: str, renderer: str) -> None:
+    set_toml_key(path, "video", "renderer", renderer)
 
 
 class Build:
@@ -258,6 +263,9 @@ class Build:
         toml = os.path.join(gd, "game.toml")
         if os.path.isfile(toml):
             set_toml_renderer(toml, self.renderer)
+            # Player 1 = the first gamepad: the touch pad, or a connected controller
+            # (psxrecomp's release default is the keyboard).
+            set_toml_key(toml, "controller", "p1_device", "auto")
         return gd
 
     def configure(self, proj: str, gd: str, display: str, bundle: str) -> str:

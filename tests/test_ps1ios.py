@@ -191,6 +191,18 @@ class IngestProbeTests(unittest.TestCase):
             self.assertIn(want, got)
             self.assertEqual(got.count("renderer ="), 1)
 
+    def test_set_toml_key_controller(self):
+        from ps1ios.pipeline import set_toml_key
+        p = os.path.join(self.d, "game.toml")
+        with open(p, "w") as f:
+            f.write('[game]\nname = "x"\n[controller]\ndefault_mode = "digital"\n[video]\nrenderer = "software"\n')
+        set_toml_key(p, "controller", "p1_device", "auto")
+        set_toml_key(p, "controller", "p1_device", "auto")
+        with open(p) as f:
+            got = f.read()
+        self.assertIn('[controller]\ndefault_mode = "digital"\np1_device = "auto"\n[video]', got)
+        self.assertEqual(got.count("p1_device"), 1)
+
     @unittest.skipIf(sys.platform == "darwin", "Mac check only meaningful off macOS")
     def test_build_fails_cleanly_without_xcode(self):
         zp = self.z({"h.bin": to_raw(psx_disc())})
