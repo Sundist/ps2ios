@@ -63,16 +63,38 @@ Device id:
 xcrun devicectl list devices
 ```
 
-Options: `--name` (home screen name), `--bios SCPH1001.BIN` (optional;
-OpenBIOS is used otherwise), `--generic` (ignore curated profiles),
-`--bundle-prefix`, `--work`, `--out`. Without `--human`, progress is printed
-as JSON lines in the format HookLink and NX2Apple parse.
+No Apple account? Build an unsigned IPA and let AltStore or Sideloadly sign it:
+
+```bash
+python3 -m ps1ios build "Game.zip" --unsigned --human
+```
+
+Or run it in the iPhone simulator and save a screenshot:
+
+```bash
+python3 -m ps1ios build "Game.zip" --target simulator --run-seconds 30 --human
+```
+
+Options: `--name` (home screen name), `--renderer auto|vulkan|software`
+(auto uses Vulkan/MoltenVK when the Vulkan SDK is installed, the software
+renderer otherwise), `--bios SCPH1001.BIN` (optional; OpenBIOS is used
+otherwise), `--generic` (ignore curated profiles), `--bundle-prefix`,
+`--work`, `--out`. Without `--human`, progress is printed as JSON lines in the
+format HookLink and NX2Apple parse.
+
+### Test ROM
+
+`testrom/` is a small original PS1 program (GPU drawing, a box you move with
+the pad) and a disc builder, so the whole pipeline can be tested without any
+commercial game. `testrom/build.sh` writes `testrom/build/PS1 Test ROM.zip`
+(needs `gcc-mipsel-linux-gnu`). The `ios-app` GitHub workflow builds it, turns
+it into an iOS app, runs it in the iPhone simulator and keeps a screenshot.
 
 ### Mac requirements
 
-- Xcode (iOS SDK) and an Apple Developer team ID (a free Personal Team works)
+- Xcode (iOS SDK); for a signed build an Apple Developer team ID (a free Personal Team works)
 - `brew install cmake ninja git`, `pip3 install numpy pillow`
-- LunarG Vulkan SDK (`glslc` + `MoltenVK.xcframework`), with `VULKAN_SDK` set
+- Optional: LunarG Vulkan SDK (`glslc` + `MoltenVK.xcframework`, iOS component), with `VULKAN_SDK` set
 - iPhone: iOS 16+, Developer Mode on
 
 ## Touch controls
