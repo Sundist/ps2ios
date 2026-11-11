@@ -113,6 +113,11 @@ static NSString *const kPadWithController = @"pad_show_with_controller"; // BOOL
 
 static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 
+// Self-test mode (PS1IOS_PAD_DEMO): the iOS simulator always reports an MFi
+// "Gamepad"; the test treats it as absent so the touch pad is player 1, as on
+// an iPhone with no controller connected.
+static BOOL g_ignore_controllers;
+
 @interface PS1TouchPad : UIView
 - (void)demoHold:(uint32_t)bits;
 - (BOOL)ensureJoystick;
@@ -155,7 +160,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     NSUserDefaults *u = NSUserDefaults.standardUserDefaults;
     _haptics = [u boolForKey:kPadHaptics];
     _opacity = MIN(MAX([u doubleForKey:kPadOpacity], 0.2), 1.0);
-    BOOL controller = GCController.controllers.count > 0;
+    BOOL controller = !g_ignore_controllers && GCController.controllers.count > 0;
     self.hidden = controller && ![u boolForKey:kPadWithController];
     if (self.hidden) {
         [self releaseAll];
@@ -225,7 +230,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 }
 
 - (void)sendToSDL {
-    if (![self ensureJoystick]) return;
+    if (self.hidden || ![self ensureJoystick]) return;
     static const struct { uint32_t bit; SDL_GamepadButton b; } map[] = {
         {PAD_UP, SDL_GAMEPAD_BUTTON_DPAD_UP}, {PAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_DOWN},
         {PAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_LEFT}, {PAD_RIGHT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT},
@@ -407,6 +412,10 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
     // shards): overlays come only from the ahead-of-time build; the rest runs
     // in psxrecomp's interpreter.
     setenv("PSX_OVERLAY_AUTOCOMPILE_OFF", "1", 1);
+    if (getenv("PS1IOS_PAD_DEMO")) {
+        g_ignore_controllers = YES;
+        setenv("SDL_JOYSTICK_MFI", "0", 1);   // hide the simulator's MFi "Gamepad" from SDL
+    }
     // Dim the home indicator and defer the system edge swipes, so a thumb on
     // the pad near a screen edge is not taken by iOS (SDL hint, read from env).
     setenv("SDL_IOS_HIDE_HOME_INDICATOR", "2", 0);
