@@ -33,6 +33,7 @@ jobs:
           FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=16.0 -Isdl3/include -Iios/src -Wall -Wextra -Werror"
           xcrun --sdk iphoneos clang $FLAGS -std=c99 -c ios/src/pad_layout.c -o pad_layout.o
           xcrun --sdk iphoneos clang++ $FLAGS -std=c++17 -fobjc-arc -Wno-unused-parameter -c ios/src/ios_platform.mm -o ios_platform.o
+          xcrun --sdk iphoneos clang -arch arm64 -isysroot $SDK -miphoneos-version-min=16.0 -Iios/glshim -Isdl3/include -Wall -Werror -c ios/glshim/gl_stubs.c -o gl_stubs.o
           ls -la *.o
       - name: CMake fragment parses
         run: |

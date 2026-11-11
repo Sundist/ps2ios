@@ -36,6 +36,10 @@ function(ps1ios_finalize)
     target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/src/ios_platform.mm" "${PS1IOS_DIR}/src/pad_layout.c")
     set_source_files_properties("${PS1IOS_DIR}/src/ios_platform.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_include_directories(psx-runtime PRIVATE "${PS1IOS_DIR}/src")
+    # Desktop GL declarations + link-time bodies for psxrecomp's OpenGL backend,
+    # which is compiled but never used on iOS (see ios/tools/make_glshim.py).
+    target_include_directories(psx-runtime BEFORE PRIVATE "${PS1IOS_DIR}/glshim")
+    target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/glshim/gl_stubs.c")
     target_link_libraries(psx-runtime PRIVATE
         "-framework UIKit" "-framework GameController" "-framework Metal"
         "-framework QuartzCore" "-framework AVFoundation" "-framework CoreHaptics")
