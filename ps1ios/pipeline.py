@@ -42,7 +42,7 @@ def run(cmd: list[str], ev: Events, cwd: str | None = None, env: dict | None = N
     tail = []
     for line in p.stdout:
         line = line.rstrip("\n")
-        tail = (tail + [line])[-40:]
+        tail = (tail + [line])[-120:]
         if not quiet or re.search(r"error|warning: .*ps1ios|\*\* ", line, re.I):
             ev.say(line)
     if p.wait() != 0:
@@ -275,7 +275,8 @@ class Build:
         sdk = "iphonesimulator" if self.a.target == "simulator" else "iphoneos"
         dd = os.path.join(self.work, "DerivedData")
         run(["xcodebuild", "-project", xcodeproj, "-scheme", "psx-runtime", "-configuration", "Release",
-             "-sdk", sdk, "-derivedDataPath", dd, "CODE_SIGNING_ALLOWED=NO", "CODE_SIGNING_REQUIRED=NO",
+             "-sdk", sdk, "-derivedDataPath", dd, "-IDEBuildingContinueBuildingAfterErrors=YES",
+             "CODE_SIGNING_ALLOWED=NO", "CODE_SIGNING_REQUIRED=NO",
              "CODE_SIGN_IDENTITY=", "build"], self.ev, quiet=True)
         apps = [p for p in glob.glob(os.path.join(self.work, "**", "PS1Game.app"), recursive=True)
                 if f"-{sdk}" in p]
