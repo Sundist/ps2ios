@@ -137,15 +137,37 @@ not a game screenshot. The white frame is the 4:3 game picture, the yellow one t
 
 ## Status
 
-- Verified: zip ingestion, disc identification, curated/generic project
-  selection, CLI (10 tests on synthetic discs); touch layout and hit testing
-  (4 tests, compiled from the same C file the app uses). The psxrecomp patch applies to
-  both clean psxrecomp (2a4824f) and the Hercules-patched tree.
-- **Not yet verified:** the iOS build on a Mac, signing, and running on a
-  device. Things to check on the first Mac build: whether the desktop OpenGL
-  renderer compiles for iOS (if not, it is switched off on iOS and
-  Vulkan/MoltenVK or the software renderer is used), SDL3's iOS startup, and
-  loading the embedded MoltenVK.
-- Frame rate is capped by the game itself. Most PS1 games step at 30 or 60 Hz;
-  the port does not raise that.
+![The test ROM running in the iPhone simulator, built by CI](docs/simulator-test-rom.png)
+
+*Real screenshot from the `ios-app` workflow (iPhone 17 Pro Max simulator): the
+original test ROM, recompiled by psxrecomp, running as an iOS app. The touch
+pad's self-test holds Right + Cross, and the game moved the box right and
+turned it blue: input reaches the recompiled game.*
+
+Verified in CI on every push (`ios-app` workflow, Xcode 26):
+
+- zip → disc → generic psxrecomp project → game C → iOS app, with no manual steps
+- **simulator build runs**: OpenBIOS boots, the game loads from the disc in
+  `Documents/disc/`, the software renderer draws through Metal, the touch pad
+  drives player 1
+- **unsigned iPhone IPA builds** (arm64, iphoneos SDK), downloadable from the
+  workflow's artifacts, for AltStore/Sideloadly
+- unit tests: zip ingestion, disc identification, project selection, game.toml
+  edits (11), touch layout and hit testing (4); the iOS layer compiles with
+  `-Werror` against the iOS SDK
+
+Not verified yet:
+
+- a **signed** build on a Mac with an Apple ID (`--team`), and running on a
+  physical iPhone
+- **commercial games**: only the original test ROM runs in CI. Curated
+  projects (Hercules PAL) are fully compiled ahead of time; other games use the
+  generic path, where code the static pass did not find runs in psxrecomp's
+  interpreter, so speed and compatibility depend on the game
+- the Vulkan/MoltenVK renderer (`--renderer vulkan`); the default is the
+  software renderer
+
+Other notes:
+
+- Frame rate is capped by the game itself (most PS1 games step at 30 or 60 Hz).
 - PS1 only. Despite the repository name, PS2 games are not supported.
