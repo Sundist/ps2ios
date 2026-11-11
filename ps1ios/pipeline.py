@@ -359,12 +359,20 @@ class Build:
                     shutil.copy2(os.path.join(src, f), ddir)
         subprocess.run(["xcrun", "simctl", "ui", udid, "appearance", "dark"], capture_output=True)
         log_path = os.path.join(self.work, "simulator.log")
+        out_dir = os.path.abspath(self.a.out or self.work)
+        os.makedirs(out_dir, exist_ok=True)
+        env = dict(os.environ)
+        if self.a.pad_demo:
+            # simctl passes SIMCTL_CHILD_* to the app; the pad then holds Right+Cross after 15 s
+            env["SIMCTL_CHILD_PS1IOS_PAD_DEMO"] = "1"
         with open(log_path, "w") as log:
             proc = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process",
-                                     udid, bundle], stdout=log, stderr=subprocess.STDOUT)
-            time.sleep(self.a.run_seconds)
-            out_dir = os.path.abspath(self.a.out or self.work)
-            os.makedirs(out_dir, exist_ok=True)
+                                     udid, bundle], stdout=log, stderr=subprocess.STDOUT, env=env)
+            first = min(12, max(1, self.a.run_seconds // 3))
+            time.sleep(first)
+            early = os.path.join(out_dir, f"{slug(self.name)}-simulator-{first}s.png")
+            run(["xcrun", "simctl", "io", udid, "screenshot", early], self.ev, quiet=True)
+            time.sleep(max(0, self.a.run_seconds - first))
             shot = os.path.join(out_dir, f"{slug(self.name)}-simulator.png")
             run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
             alive = proc.poll() is None

@@ -57,7 +57,7 @@ jobs:
         run: |
           python -m ps1ios build "disc/PS1 Test ROM.zip" --target simulator \
             --renderer "${{ github.event.inputs.renderer || 'software' }}" \
-            --run-seconds 45 --name "PS1 Test" --work build --out out --human
+            --run-seconds 45 --pad-demo --name "PS1 Test" --work build --out out --human
       - name: Screenshot into the log (base64, downscaled)
         if: always()
         run: |

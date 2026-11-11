@@ -114,6 +114,7 @@ static NSString *const kPadWithController = @"pad_show_with_controller"; // BOOL
 static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 
 @interface PS1TouchPad : UIView
+- (void)demoHold:(uint32_t)bits;
 @end
 
 @implementation PS1TouchPad {
@@ -126,6 +127,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     UISelectionFeedbackGenerator *_roll;
     BOOL _haptics;
     CGFloat _opacity;
+    uint32_t _demo;     // buttons held by the PS1IOS_PAD_DEMO self-test
 }
 
 - (instancetype)initWithFrame:(CGRect)f {
@@ -187,6 +189,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     SDL_JoystickID id = SDL_AttachVirtualJoystick(&d);
     if (!id) return NO;
     _joy = SDL_OpenJoystick(id);
+    NSLog(@"ps1ios: touch pad virtual gamepad id %u %s", (unsigned)id, _joy ? "open" : SDL_GetError());
     return _joy != NULL;
 }
 
@@ -213,6 +216,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 - (void)recompute {
     uint32_t held = 0;
     for (UITouch *t in _touches) held |= [[_touches objectForKey:t] unsignedIntValue];
+    held |= _demo;
     uint32_t pressed = held & ~_held;
     if (_haptics && pressed) {
         // A new button: a light tap. Rolling the thumb to a new d-pad direction: a tick.
@@ -237,6 +241,14 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     CGFloat target = _touches.count ? MIN(1.0, _opacity + 0.3) : _opacity;
     if (fabs(self.alpha - target) > 0.01)
         [UIView animateWithDuration:_touches.count ? 0.05 : 0.3 animations:^{ self.alpha = target; }];
+}
+
+// Self-test (PS1IOS_PAD_DEMO=1): hold buttons as if touched, to check the whole
+// input path (overlay -> SDL virtual gamepad -> psxrecomp -> the game) in CI.
+- (void)demoHold:(uint32_t)bits {
+    _demo = bits;
+    [self recompute];
+    NSLog(@"ps1ios: pad demo holding 0x%x (joystick %s)", bits, _joy ? "attached" : "not attached");
 }
 
 - (void)releaseAll {
@@ -326,8 +338,39 @@ static void draw_label(NSString *t, CGPoint c, CGFloat size, CGFloat alpha) {
 }
 @end
 
-// Attach the pad to SDL's window as soon as it becomes visible. No runtime
-// code calls into this: the static initialiser registers the observer.
+static PS1TouchPad *g_pad;
+static BOOL g_demo_started;
+
+static UIWindow *ps1ios_game_window(void) {
+    UIWindow *best = nil;
+    for (UIScene *sc in UIApplication.sharedApplication.connectedScenes) {
+        if (![sc isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *w in ((UIWindowScene *)sc).windows) {
+            if (w.isKeyWindow) return w;
+            if (!best && !w.hidden) best = w;
+        }
+    }
+    return best;
+}
+
+static void ps1ios_attach_pad(void) {
+    UIWindow *w = ps1ios_game_window();
+    if (!w) return;
+    UIView *host = w.rootViewController.view ?: w;
+    if (!g_pad) g_pad = [[PS1TouchPad alloc] initWithFrame:host.bounds];
+    if (g_pad.superview != host) {
+        [g_pad removeFromSuperview];
+        g_pad.frame = host.bounds;
+        [host addSubview:g_pad];
+        NSLog(@"ps1ios: touch pad attached to %@ %@ (hidden=%d)", NSStringFromClass(host.class),
+              NSStringFromCGRect(host.bounds), g_pad.hidden);
+    } else if (host.subviews.lastObject != g_pad) {
+        [host bringSubviewToFront:g_pad];
+    }
+}
+
+// The pad is attached from a timer started at launch. No runtime code calls
+// into this file for it: the static initialiser registers the observer.
 __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
     // iOS forbids loading code made at run time (no tcc + dlopen of overlay
     // shards): overlays come only from the ahead-of-time build; the rest runs
@@ -338,13 +381,17 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
     setenv("SDL_IOS_HIDE_HOME_INDICATOR", "2", 0);
     [NSUserDefaults.standardUserDefaults registerDefaults:@{
         kPadScale: @1.0, kPadOpacity: @0.6, kPadHaptics: @YES, kPadWithController: @NO}];
-    [NSNotificationCenter.defaultCenter addObserverForName:UIWindowDidBecomeVisibleNotification
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidFinishLaunchingNotification
         object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
-            UIWindow *w = n.object;
-            if (!w.rootViewController) return;
-            UIView *root = w.rootViewController.view;
-            for (UIView *v in root.subviews)
-                if ([v isKindOfClass:PS1TouchPad.class]) return;
-            [root addSubview:[[PS1TouchPad alloc] initWithFrame:root.bounds]];
+            // SDL creates its window and Metal view after launch and may add views
+            // on top later, so (re)attach the pad and keep it in front.
+            NSDate *start = [NSDate date];
+            [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
+                ps1ios_attach_pad();
+                if (g_pad && getenv("PS1IOS_PAD_DEMO") && !g_demo_started && -start.timeIntervalSinceNow > 15) {
+                    g_demo_started = YES;
+                    [g_pad demoHold:PAD_RIGHT | PAD_CROSS];
+                }
+            }];
         }];
 }

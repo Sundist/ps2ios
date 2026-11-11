@@ -63,6 +63,8 @@ def main(argv=None) -> int:
                    help="vulkan = MoltenVK/Metal (needs the Vulkan SDK); software = CPU renderer; auto picks vulkan if found")
     b.add_argument("--run-seconds", type=int, default=0,
                    help="simulator: start the game, wait this long, save a screenshot")
+    b.add_argument("--pad-demo", action="store_true",
+                   help="simulator self-test: the touch pad holds Right+Cross after 15 s")
     b.add_argument("--human", action="store_true", help="readable progress instead of JSON lines")
     b.set_defaults(fn=None)
     a = ap.parse_args(argv)
