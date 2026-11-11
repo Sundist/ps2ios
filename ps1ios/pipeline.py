@@ -302,7 +302,9 @@ class Build:
             shutil.rmtree(d)
         os.makedirs(os.path.join(d, "Payload"))
         shutil.copytree(app, os.path.join(d, "Payload", os.path.basename(app)), symlinks=True)
-        out = os.path.join(self.a.out or self.work, f"{slug(name)}.ipa")
+        out_dir = os.path.abspath(self.a.out or self.work)
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, f"{slug(name)}.ipa")
         run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", "Payload", out], self.ev, cwd=d)
         return out
 
@@ -352,7 +354,9 @@ class Build:
             proc = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process",
                                      udid, bundle], stdout=log, stderr=subprocess.STDOUT)
             time.sleep(self.a.run_seconds)
-            shot = os.path.join(self.a.out or self.work, f"{slug(self.name)}-simulator.png")
+            out_dir = os.path.abspath(self.a.out or self.work)
+            os.makedirs(out_dir, exist_ok=True)
+            shot = os.path.join(out_dir, f"{slug(self.name)}-simulator.png")
             run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
             alive = proc.poll() is None
             proc.terminate()
