@@ -37,6 +37,16 @@ jobs:
         with:
           name: testrom-disc
           path: disc
+      - name: Restore cache (psxrecomp checkout, generated project, CMake checks)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/psxrecomp
+            build/src
+            build/xcode
+          key: ios-build-v2-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+          restore-keys: |
+            ios-build-v2-${{ hashFiles('testrom/**') }}-
       - name: Tools
         run: |
           brew install ninja || true
@@ -48,6 +58,15 @@ jobs:
           python -m ps1ios build "disc/PS1 Test ROM.zip" --target simulator \
             --renderer "${{ github.event.inputs.renderer || 'software' }}" \
             --run-seconds 45 --name "PS1 Test" --work build --out out --human
+      - name: Save cache (also after a failed build)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/psxrecomp
+            build/src
+            build/xcode
+          key: ios-build-v2-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
       - name: Keep results
         if: always()
         uses: actions/upload-artifact@v4
