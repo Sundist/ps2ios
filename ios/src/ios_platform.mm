@@ -115,6 +115,8 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 
 @interface PS1TouchPad : UIView
 - (void)demoHold:(uint32_t)bits;
+- (BOOL)ensureJoystick;
+- (void)logInputDevices;
 @end
 
 @implementation PS1TouchPad {
@@ -155,7 +157,14 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     _opacity = MIN(MAX([u doubleForKey:kPadOpacity], 0.2), 1.0);
     BOOL controller = GCController.controllers.count > 0;
     self.hidden = controller && ![u boolForKey:kPadWithController];
-    if (self.hidden) [self releaseAll];
+    if (self.hidden) {
+        [self releaseAll];
+        // Take the touch pad out of SDL entirely, so psxrecomp moves player 1
+        // to the real controller (it rebinds when its device is removed).
+        [self detachJoystick];
+    } else {
+        [self ensureJoystick];
+    }
     self.alpha = _opacity;
     [self setNeedsLayout];
 }
@@ -191,6 +200,28 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
     _joy = SDL_OpenJoystick(id);
     NSLog(@"ps1ios: touch pad virtual gamepad id %u %s", (unsigned)id, _joy ? "open" : SDL_GetError());
     return _joy != NULL;
+}
+
+- (void)detachJoystick {
+    if (!_joy) return;
+    SDL_JoystickID id = SDL_GetJoystickID(_joy);
+    SDL_CloseJoystick(_joy);
+    _joy = NULL;
+    SDL_DetachVirtualJoystick(id);
+    NSLog(@"ps1ios: touch pad virtual gamepad %u detached (a controller is connected)", (unsigned)id);
+}
+
+- (void)logInputDevices {
+    for (GCController *c in GCController.controllers)
+        NSLog(@"ps1ios: GCController '%@' (%@)", c.vendorName, c.productCategory);
+    if (!(SDL_WasInit(SDL_INIT_JOYSTICK) & SDL_INIT_JOYSTICK)) return;
+    int n = 0;
+    SDL_JoystickID *ids = SDL_GetJoysticks(&n);
+    for (int i = 0; ids && i < n; i++)
+        NSLog(@"ps1ios: SDL joystick %u '%s' gamepad=%d virtual=%d", (unsigned)ids[i],
+              SDL_GetJoystickNameForID(ids[i]) ?: "?", SDL_IsGamepad(ids[i]), SDL_IsJoystickVirtual(ids[i]));
+    SDL_free(ids);
+    NSLog(@"ps1ios: touch pad hidden=%d alpha=%.2f frame=%@", self.hidden, self.alpha, NSStringFromCGRect(self.frame));
 }
 
 - (void)sendToSDL {
@@ -386,8 +417,13 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
             // SDL creates its window and Metal view after launch and may add views
             // on top later, so (re)attach the pad and keep it in front.
             NSDate *start = [NSDate date];
+            __block int ticks = 0;
             [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
                 ps1ios_attach_pad();
+                // Present the touch pad to SDL as soon as its joystick layer is up,
+                // so psxrecomp sees it when it binds player 1.
+                if (g_pad && !g_pad.hidden) [g_pad ensureJoystick];
+                if (++ticks == 20 && g_pad) [g_pad logInputDevices];
                 if (g_pad && getenv("PS1IOS_PAD_DEMO") && !g_demo_started && -start.timeIntervalSinceNow > 15) {
                     g_demo_started = YES;
                     [g_pad demoHold:PAD_RIGHT | PAD_CROSS];
