@@ -96,3 +96,54 @@ jobs:
             build/src/*/build*/CMakeFiles/*.log
             build/xcode/CMakeFiles/*.log
           if-no-files-found: ignore
+
+  device-ipa:
+    # Unsigned iPhone build (arm64, iphoneos SDK): an IPA that AltStore or
+    # Sideloadly re-signs with the user's Apple ID.
+    needs: testrom
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: testrom-disc
+          path: disc
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build-device/psxrecomp
+            build-device/src
+            build-device/xcode
+          key: ios-device-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+          restore-keys: |
+            ios-device-v1-${{ hashFiles('testrom/**') }}-
+      - name: Tools
+        run: |
+          brew install ninja || true
+          python -m pip install numpy pillow
+      - name: zip -> unsigned iPhone IPA
+        run: |
+          python -m ps1ios build "disc/PS1 Test ROM.zip" --unsigned --renderer software \
+            --name "PS1 Test" --work build-device --out out-device --human
+          ls -la out-device
+          unzip -l out-device/*.ipa | tail -5
+      - name: Save cache (also after a failed build)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build-device/psxrecomp
+            build-device/src
+            build-device/xcode
+          key: ios-device-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ps1-test-unsigned-ipa
+          path: out-device/*.ipa
+

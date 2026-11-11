@@ -59,8 +59,10 @@ def main(argv=None) -> int:
                    help="device (iPhone) or the iOS simulator (no Apple account needed)")
     b.add_argument("--unsigned", action="store_true",
                    help="device build without signing: an IPA for AltStore/Sideloadly to re-sign")
-    b.add_argument("--renderer", choices=["auto", "vulkan", "software"], default="auto",
-                   help="vulkan = MoltenVK/Metal (needs the Vulkan SDK); software = CPU renderer; auto picks vulkan if found")
+    b.add_argument("--renderer", choices=["auto", "vulkan", "software"], default="software",
+                   help="software = CPU renderer shown through Metal (default, tested); "
+                        "vulkan = MoltenVK/Metal (needs the Vulkan SDK; not yet tested on a device); "
+                        "auto = vulkan if the SDK is found")
     b.add_argument("--run-seconds", type=int, default=0,
                    help="simulator: start the game, wait this long, save a screenshot")
     b.add_argument("--pad-demo", action="store_true",
