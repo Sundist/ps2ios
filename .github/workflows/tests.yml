@@ -35,6 +35,6 @@ jobs:
           xcrun --sdk iphoneos clang++ $FLAGS -std=c++17 -fobjc-arc -Wno-unused-parameter -c ios/src/ios_platform.mm -o ios_platform.o
           ls -la *.o
       - name: CMake fragment parses
-        run: cmake -P /dev/stdin <<< 'set(CMAKE_SYSTEM_NAME Linux)
-          include(ios/ios.cmake)
-          message(STATUS "ios.cmake ok")'
+        run: |
+          printf 'set(CMAKE_SYSTEM_NAME Linux)\ninclude(ios/ios.cmake)\nmessage(STATUS "ios.cmake ok")\n' > check.cmake
+          cmake -P check.cmake
