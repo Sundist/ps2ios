@@ -174,7 +174,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 
 - (void)recompute {
     uint32_t held = 0;
-    for (UITouch *t in _touches) held |= _touches[t].unsignedIntValue;
+    for (UITouch *t in _touches) held |= [[_touches objectForKey:t] unsignedIntValue];
     uint32_t pressed = held & ~_held;
     if (_haptics && pressed) {
         // A new button: a light tap. Rolling the thumb to a new d-pad direction: a tick.
@@ -193,7 +193,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
         if (ended) { [_touches removeObjectForKey:t]; continue; }
         CGPoint p = [t locationInView:self];
         uint32_t bits = pad_hit(_c, _n, (float)p.x, (float)p.y);
-        _touches[t] = @(bits);
+        [_touches setObject:@(bits) forKey:t];
     }
     [self recompute];
     CGFloat target = _touches.count ? MIN(1.0, _opacity + 0.3) : _opacity;
