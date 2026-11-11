@@ -63,6 +63,8 @@ function(ps1ios_finalize)
     # Desktop GL declarations + link-time bodies for psxrecomp's OpenGL backend,
     # which is compiled but never used on iOS (see ios/tools/make_glshim.py).
     target_include_directories(psx-runtime BEFORE PRIVATE "${PS1IOS_DIR}/glshim")
+    # iOS has no system(): see ios/src/ios_compat.h.
+    target_compile_options(psx-runtime PRIVATE "SHELL:-include ${PS1IOS_DIR}/src/ios_compat.h")
     target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/glshim/gl_stubs.c")
     target_link_libraries(psx-runtime PRIVATE
         "-framework UIKit" "-framework GameController" "-framework Metal"
