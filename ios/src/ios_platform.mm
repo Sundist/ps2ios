@@ -6,6 +6,7 @@
 // (shared with the layout drawing and the unit tests). It hides while a real
 // controller is connected (GCController), unless the user turns that off.
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <GameController/GameController.h>
 #include <SDL3/SDL.h>
 #include <string>
@@ -232,6 +233,7 @@ static const uint32_t kDpadBits = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
 // "Gamepad"; the test treats it as absent so the touch pad is player 1, as on
 // an iPhone with no controller connected.
 static BOOL g_ignore_controllers;
+static CFTimeInterval g_start_time;
 
 @interface PS1TouchPad : UIView
 - (void)demoHold:(uint32_t)bits;
@@ -437,6 +439,17 @@ static void draw_label(NSString *t, CGPoint c, CGFloat size, CGFloat alpha) {
 }
 
 - (void)drawRect:(CGRect)rect {
+    if (g_ignore_controllers) {
+        // Self-test only: real time since the app started, in tenths of a second, as 16
+        // binary boxes (bit 15 on the left) in the bottom-left corner. With the test ROM's
+        // frame counter in the same screenshot this gives the game's real frame rate.
+        uint32_t ds = (uint32_t)((CACurrentMediaTime() - g_start_time) * 10.0);
+        CGFloat y = self.bounds.size.height - 12;
+        for (int i = 0; i < 16; i++) {
+            [((ds >> (15 - i)) & 1) ? UIColor.whiteColor : [UIColor colorWithWhite:0.15 alpha:1] setFill];
+            UIRectFill(CGRectMake(30 + i * 9, y, 7, 7));
+        }
+    }
     UIColor *stroke = [UIColor colorWithWhite:1 alpha:0.6];
     for (int i = 0; i < _n; i++) {
         const pad_control *c = &_c[i];
@@ -531,6 +544,7 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
     if (ps1ios_is_universal()) setenv("PSX_FORCE_INTERP", "1", 1);
     if (getenv("PS1IOS_PAD_DEMO")) {
         g_ignore_controllers = YES;
+        g_start_time = CACurrentMediaTime();
         setenv("SDL_JOYSTICK_MFI", "0", 1);   // hide the simulator's MFi "Gamepad" from SDL
     }
     // Dim the home indicator and defer the system edge swipes, so a thumb on
@@ -544,6 +558,10 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
             // on top later, so (re)attach the pad and keep it in front.
             NSDate *start = [NSDate date];
             __block int ticks = 0;
+            if (g_ignore_controllers)   // self-test clock: redraw 20 times a second
+                [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *t) {
+                    [g_pad setNeedsDisplay];
+                }];
             [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *t) {
                 ps1ios_attach_pad();
                 // Present the touch pad to SDL as soon as its joystick layer is up,
