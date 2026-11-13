@@ -13,7 +13,9 @@ phone). It is slower than a game recompiled ahead of time with `ps1ios build`, a
 depends on the game.
 
 **Experimental.** Verified in CI: the app starts a disc it was not built from in the iPhone
-simulator, and the touch pad controls it. Not verified: commercial games and physical devices.
+simulator, and the touch pad controls it. In that simulator a CPU-bound test ROM ran at about
+45 of 60 frames per second in this player (59.8 when the same ROM is recompiled ahead of time).
+Not verified: commercial games and physical devices; some games may be too slow.
 
 This download contains no game and no Sony BIOS. Use it only with dumps of discs you own.
 
