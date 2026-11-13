@@ -1,5 +1,9 @@
 name: tests
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    # not for documentation-only changes (the macOS job is slow to get a runner)
+    paths: ["ps1ios/**", "ios/**", "tests/**", "testrom/**", "tools/**", ".github/workflows/tests.yml"]
 jobs:
   # Python and C unit tests (zip ingestion, disc probing, touch layout).
   unit:

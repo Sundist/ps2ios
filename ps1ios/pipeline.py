@@ -398,8 +398,21 @@ class Build:
         with open(log_path, "w") as log:
             proc = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process",
                                      udid, bundle], stdout=log, stderr=subprocess.STDOUT, env=env)
-            # Four screenshots spread over the run: the first can land before the game
-            # draws on a slow machine, and two later ones give a frame-rate measurement.
+            # Wait until the app is really up (its iOS layer logs when the touch pad is
+            # attached to the game window): a busy machine can take minutes to launch it.
+            def log_has(marker: str) -> bool:
+                with open(log_path, errors="replace") as lf:
+                    return marker in lf.read()
+            deadline = time.time() + 420
+            while not log_has("ps1ios: touch pad attached"):
+                if proc.poll() is not None:
+                    raise PipelineError(f"the app exited before it drew anything (log: {log_path})")
+                if time.time() > deadline:
+                    proc.terminate()
+                    raise PipelineError("the app did not start within 7 minutes in the simulator")
+                time.sleep(2)
+            self.ev.say("app is up")
+            # Four screenshots spread over the run: two valid ones give a frame-rate measurement.
             base = os.path.join(out_dir, f"{slug(self.name)}-simulator")
             marks = [max(1, self.a.run_seconds * k // 4) for k in (1, 2, 3)] + [self.a.run_seconds]
             waited = 0
@@ -409,6 +422,7 @@ class Build:
                 shot = f"{base}.png" if n == len(marks) else f"{base}-{n}.png"
                 run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
             alive = proc.poll() is None
+            pad_ok = (not self.a.pad_demo) or log_has("ps1ios: pad demo holding")
             proc.terminate()
         for label, root in (("app bundle", app), ("Documents", os.path.join(data, "Documents"))):
             files = []
@@ -425,6 +439,8 @@ class Build:
             self.ev.say("app: " + ln)
         if not alive:
             raise PipelineError(f"the app exited within {self.a.run_seconds}s (log: {log_path}, screenshot: {shot})")
+        if not pad_ok:
+            raise PipelineError("the touch pad self-test never ran (no 'pad demo holding' in the app log)")
         return shot
 
     # ------------------------------------------------------------ main
