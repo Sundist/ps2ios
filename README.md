@@ -20,8 +20,15 @@ Two ways to use it:
 
 ## Universal player (no Mac, no per-game build)
 
-> **Status: experimental, not verified yet.** The IPA builds in CI. The test that proves the
-> player runs a disc it was not built from is still being brought up; see [Status](#status).
+> **Status: experimental.** Verified in CI: a player built from test ROM A starts and runs test
+> ROM B, a disc it was not built from, and the touch pad controls it. Not verified: commercial
+> games and physical iPhones. Speed is the open question; see [Status](#status).
+
+![The universal player running a disc it was not built from](docs/simulator-universal-player.png)
+
+*Real screenshot from CI (iPhone 17 Pro Max simulator): the player was built from test ROM A and
+is running test ROM B (warm colours, spinning square). The row of boxes at the top is the ROM's
+frame counter; the small row at the bottom left is the self-test's real-time clock.*
 
 `ps1-player.ipa` is built by this repository's CI and contains no game:
 
@@ -176,35 +183,46 @@ not a game screenshot. The white frame is the 4:3 game picture, the yellow one t
 
 ![The test ROM running in the iPhone simulator, built by CI](docs/simulator-test-rom.png)
 
-*Real screenshot from the `ios-app` workflow (iPhone 17 Pro Max simulator): the
-original test ROM, recompiled by psxrecomp, running as an iOS app. The touch
-pad's self-test holds Right + Cross, and the game moved the box right and
-turned it blue: input reaches the recompiled game.*
+*Real screenshot from the `ios-app` workflow (iPhone 17 Pro Max simulator): the original test
+ROM, recompiled by psxrecomp, running as an iOS app. The touch pad's self-test holds Right +
+Cross, and the game moved the box right and turned it blue: input reaches the game.*
 
-Verified in CI on every push (`ios-app` workflow, Xcode 26):
+Verified in CI on every push (`ios-app` workflow, Xcode 26), with original test ROMs only:
 
-- zip → disc → generic psxrecomp project → game C → iOS app, with no manual steps
-- **simulator build runs**: OpenBIOS boots, the game loads from the disc in
-  `Documents/disc/`, the software renderer draws through Metal, the touch pad
-  drives player 1
-- **unsigned iPhone IPA builds** (arm64, iphoneos SDK), downloadable from the
-  workflow's artifacts, for AltStore/Sideloadly
-- unit tests: zip ingestion, disc identification, project selection, game.toml
-  edits (11), touch layout and hit testing (4); the iOS layer compiles with
-  `-Werror` against the iOS SDK
+- **per-game build**: zip → disc → generic psxrecomp project → game C → iOS app, no manual
+  steps; the simulator build boots OpenBIOS, loads the game from `Documents/disc/`, draws with
+  the software renderer through Metal, and the touch pad drives player 1
+- **universal player**: built from test ROM A, it identifies and runs test ROM B from
+  `Documents/disc`, with all game code interpreted; the touch pad drives it
+- **unsigned iPhone IPA** of the universal player (arm64, iphoneos SDK), uploaded as the
+  `ps1-player-unsigned-ipa` artifact
+- the simulator test waits for the app to be up and fails if the pad self-test never ran
+- unit tests (21): zip ingestion, disc identification, project selection, game.toml edits;
+  touch layout and hit testing; the on-device disc probe and game.toml rewrite. The iOS layer
+  compiles with `-Werror` against the iOS SDK
+
+Measured speed (same CI run, iPhone simulator on a GitHub macOS runner, frames counted by the
+test ROM against a real-time clock drawn by the app):
+
+| Build | Frames/s (target 60) |
+|---|---|
+| Per-game build (game code compiled ahead of time) | 59.8 |
+| Universal player (game code interpreted) | 44.9 – 45.5 |
+
+The test ROM keeps the CPU busy for the whole frame (it polls a timer while it waits), which is
+the hard case for an interpreter. A simulator on a shared CI machine is not an iPhone, so these
+numbers show the gap between the two modes, not what a phone will do.
 
 Not verified yet:
 
-- a **signed** build on a Mac with an Apple ID (`--team`), and running on a
-  physical iPhone
-- **commercial games**: only the original test ROM runs in CI. Curated
-  projects (Hercules PAL) are fully compiled ahead of time; other games use the
-  generic path, where code the static pass did not find runs in psxrecomp's
-  interpreter, so speed and compatibility depend on the game
-- the Vulkan/MoltenVK renderer (`--renderer vulkan`); the default is the
-  software renderer
+- anything on a **physical iPhone**, and a **signed** build with an Apple ID (`--team`)
+- **commercial games**: only the original test ROMs run in CI. Speed and compatibility depend
+  on the game; the universal player in particular may be too slow for some
+- the universal player's game picker (several discs) and its "no disc yet" message
+- `.chd` discs in the universal player (the on-device probe reads `.bin`/`.img`/`.iso` only)
+- the Vulkan/MoltenVK renderer (`--renderer vulkan`); the default is the software renderer
 
 Other notes:
 
 - Frame rate is capped by the game itself (most PS1 games step at 30 or 60 Hz).
-- PS1 only. Despite the repository name, PS2 games are not supported.
+- PS1 only. Despite the repository name, PS2 and Switch games are not supported.
