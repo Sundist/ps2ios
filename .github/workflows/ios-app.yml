@@ -11,6 +11,9 @@ on:
       renderer:
         description: "software or vulkan"
         default: software
+      release_tag:
+        description: "Publish the universal player as a GitHub release with this tag (e.g. v0.1.0). Empty = no release."
+        default: ""
   push:
     branches: [main]
     tags: ["v*"]
@@ -212,10 +215,15 @@ jobs:
         with:
           name: ps1-player-unsigned-ipa
           path: out-device/*.ipa
-      - name: GitHub release (only for v* tags)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: GitHub release (a v* tag, or the release_tag input)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" out-device/ps1-player.ipa \
-            --title "PS1 Player $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title "PS1 Player $TAG" --notes-file docs/RELEASE_NOTES.md
+          fi
+          gh release upload "$TAG" out-device/ps1-player.ipa --clobber
+          gh release view "$TAG" --json url,assets -q '.url, (.assets[] | .name + " " + (.size|tostring) + " bytes")'
