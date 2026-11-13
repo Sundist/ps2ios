@@ -9,6 +9,43 @@ Graphics, sound and videos are read at run time from the disc image on the phone
 > dumps of discs you own. psxrecomp is licensed under PolyForm Noncommercial
 > 1.0.0, so the apps you build are for noncommercial use.
 
+Two ways to use it:
+
+| | Universal player | Per-game build |
+|---|---|---|
+| What you get | one app that runs any PS1 disc you copy into it | one app per game |
+| Needs a Mac / Xcode | **no**: sideload the prebuilt IPA | yes |
+| Game code | interpreted on the phone | recompiled to native code ahead of time (fastest) |
+| How | [Universal player](#universal-player-no-mac-no-per-game-build) | [Usage](#usage) |
+
+## Universal player (no Mac, no per-game build)
+
+> **Status: experimental, not verified yet.** The IPA builds in CI. The test that proves the
+> player runs a disc it was not built from is still being brought up; see [Status](#status).
+
+`ps1-player.ipa` is built by this repository's CI and contains no game:
+
+1. Download it from the latest `ios-app` workflow run (artifact `ps1-player-unsigned-ipa`),
+   or from Releases when a version is tagged.
+2. Sideload it with AltStore, SideStore or Sideloadly (they sign it with your Apple ID;
+   Sideloadly and AltServer also run on Windows).
+3. In the Files app open **On My iPhone → PS1 Player → disc** and copy in your own disc dump
+   (`.cue` + `.bin`, or `.bin`, `.img`, `.iso`).
+4. Open the app. With several games in the folder it asks which one to start.
+
+It is psxrecomp's runtime with the bundled OpenBIOS. On each start the app reads the disc's
+`SYSTEM.CNF` and boot executable header, describes that disc to the runtime, and runs all game
+code in psxrecomp's interpreter. iOS does not allow generating native code on the phone, so a
+game cannot be recompiled there; that is what the per-game build on a Mac is for.
+
+## Switch games
+
+This repository does PS1 only. Switch games need a different engine
+([nxnative](https://github.com/seedds/nxnative)), and
+[NX2Apple](https://github.com/LNPANDY/NX2Apple) already wraps it in a launcher for macOS and
+Windows. It works from your own game dumps and your own console keys; neither that project
+nor this one provides games or keys.
+
 ## How it works
 
 ```
