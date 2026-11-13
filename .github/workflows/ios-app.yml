@@ -1,7 +1,10 @@
 name: ios-app
-# End to end: build the original test ROM (testrom/), turn its disc zip into an
-# iOS app with ps1ios, run it in the iPhone simulator and keep a screenshot.
-# Uses no commercial game data.
+# End to end, with no commercial game data:
+#   simulator      test ROM A -> its own iOS app -> runs in the iPhone simulator
+#   universal-sim  universal player (built from ROM A) runs ROM B, a disc it was
+#                  not built from, with the game code interpreted
+#   universal-ipa  the universal player as an unsigned iPhone IPA (artifact; a
+#                  GitHub release on a v* tag)
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +13,7 @@ on:
         default: software
   push:
     branches: [main]
+    tags: ["v*"]
     paths: ["ps1ios/**", "ios/**", "testrom/**", ".github/workflows/ios-app.yml"]
 
 jobs:
@@ -22,7 +26,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: testrom-disc
-          path: testrom/build/PS1 Test ROM.zip
+          path: testrom/build/*.zip
 
   simulator:
     needs: testrom
@@ -97,9 +101,8 @@ jobs:
             build/xcode/CMakeFiles/*.log
           if-no-files-found: ignore
 
-  device-ipa:
-    # Unsigned iPhone build (arm64, iphoneos SDK): an IPA that AltStore or
-    # Sideloadly re-signs with the user's Apple ID.
+  universal-sim:
+    # One app for any PS1 disc: built from test ROM A, it must run test ROM B.
     needs: testrom
     runs-on: macos-latest
     timeout-minutes: 150
@@ -116,22 +119,86 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            build-device/psxrecomp
-            build-device/src
-            build-device/xcode
-          key: ios-device-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+            build-uni/psxrecomp
+            build-uni/src
+            build-uni/xcode
+          key: ios-uni-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
           restore-keys: |
-            ios-device-v1-${{ hashFiles('testrom/**') }}-
+            ios-uni-v1-${{ hashFiles('testrom/**') }}-
       - name: Tools
         run: |
           brew install ninja || true
           python -m pip install numpy pillow
-      - name: zip -> unsigned iPhone IPA
+      - name: universal player (simulator) runs a disc it was not built from
         run: |
-          python -m ps1ios build "disc/PS1 Test ROM.zip" --unsigned --renderer software \
-            --name "PS1 Test" --work build-device --out out-device --human
+          python -m ps1ios build "disc/PS1 Test ROM.zip" --universal --target simulator \
+            --renderer software --run-disc "disc/PS1 Test ROM B.zip" --run-seconds 45 --pad-demo \
+            --work build-uni --out out-uni --human
+      - name: Screenshot into the log (base64, downscaled)
+        if: always()
+        run: |
+          for f in out-uni/*.png; do
+            [ -f "$f" ] || continue
+            sips -Z 900 "$f" --out shot_small.png >/dev/null
+            echo "=== BEGIN SCREENSHOT $(basename "$f") ==="
+            base64 -i shot_small.png | fold -w 180
+            echo "=== END SCREENSHOT ==="
+          done
+      - name: Save cache (also after a failed build)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build-uni/psxrecomp
+            build-uni/src
+            build-uni/xcode
+          key: ios-uni-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: universal-simulator-results
+          path: |
+            out-uni/
+            build-uni/simulator.log
+          if-no-files-found: warn
+
+  universal-ipa:
+    # The universal player as an unsigned iPhone IPA (arm64, iphoneos SDK), for
+    # AltStore or Sideloadly to sign with the user's Apple ID. No Mac needed to use it.
+    needs: testrom
+    runs-on: macos-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: testrom-disc
+          path: disc
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build-device/psxrecomp
+            build-device/src
+            build-device/xcode
+          key: ios-device-v2-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+          restore-keys: |
+            ios-device-v2-${{ hashFiles('testrom/**') }}-
+      - name: Tools
+        run: |
+          brew install ninja || true
+          python -m pip install numpy pillow
+      - name: universal player -> unsigned iPhone IPA
+        run: |
+          python -m ps1ios build "disc/PS1 Test ROM.zip" --universal --unsigned --renderer software \
+            --work build-device --out out-device --human
           ls -la out-device
-          unzip -l out-device/*.ipa | tail -5
+          unzip -l out-device/*.ipa | grep -vE "\.lproj|_CodeSignature" | tail -30
       - name: Save cache (also after a failed build)
         if: always()
         uses: actions/cache/save@v4
@@ -140,10 +207,15 @@ jobs:
             build-device/psxrecomp
             build-device/src
             build-device/xcode
-          key: ios-device-v1-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
+          key: ios-device-v2-${{ hashFiles('testrom/**') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: ps1-test-unsigned-ipa
+          name: ps1-player-unsigned-ipa
           path: out-device/*.ipa
-
+      - name: GitHub release (only for v* tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out-device/ps1-player.ipa \
+            --title "PS1 Player $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md

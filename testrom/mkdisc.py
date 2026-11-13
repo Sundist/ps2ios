@@ -13,7 +13,7 @@ import os
 import struct
 import zipfile
 
-SERIAL_FILE = "HBRW_000.01"   # homebrew-style name; serial HBRW-00001
+SERIAL_FILE = "HBRW_000.01"   # default boot file; homebrew-style name, serial HBRW-00001
 LOAD_ADDR = 0x80010000
 STACK = 0x801FFFF0
 
@@ -188,11 +188,12 @@ def main():
     ap.add_argument("--entry", default="0x80010000")
     ap.add_argument("--out", required=True)
     ap.add_argument("--name", default="PS1 Test ROM")
+    ap.add_argument("--boot", default=SERIAL_FILE, help="boot file name on the disc, e.g. HBRW_000.02")
     a = ap.parse_args()
     with open(a.bin, "rb") as f:
         exe = make_exe(f.read(), int(a.entry, 0))
-    cnf = (f"BOOT = cdrom:\\{SERIAL_FILE};1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = 801FFFF0\r\n").encode()
-    sectors = build_iso_sectors({"SYSTEM.CNF": cnf, SERIAL_FILE: exe}, "PS1TEST")
+    cnf = (f"BOOT = cdrom:\\{a.boot};1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = 801FFFF0\r\n").encode()
+    sectors = build_iso_sectors({"SYSTEM.CNF": cnf, a.boot: exe}, "PS1TEST")
     os.makedirs(a.out, exist_ok=True)
     base = a.name
     bin_path = os.path.join(a.out, base + ".bin")

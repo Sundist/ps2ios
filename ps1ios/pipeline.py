@@ -260,6 +260,21 @@ class Build:
                 shutil.copy2(src, os.path.join(gd, "bios", f))
             else:
                 self.ev.say(f"warning: {src} not found")
+        # Licence notices travel with the app (psxrecomp: PolyForm Noncommercial; OpenBIOS: MIT).
+        lic = os.path.join(gd, "licenses")
+        os.makedirs(lic, exist_ok=True)
+        for src, dst in (("LICENSE", "psxrecomp-LICENSE"), ("THIRD_PARTY_ATTRIBUTION.md", "THIRD_PARTY_ATTRIBUTION.md")):
+            f = os.path.join(self.recomp_dir, src)
+            if os.path.isfile(f):
+                shutil.copy2(f, os.path.join(lic, dst))
+        rl = os.path.join(self.recomp_dir, "runtime", "licenses")
+        if os.path.isdir(rl):
+            shutil.copytree(rl, lic, dirs_exist_ok=True)
+        if self.a.universal:
+            # Marks a universal player: the app runs whatever disc is in Documents/disc,
+            # with all game code in the interpreter (see ios/src/ios_platform.mm).
+            with open(os.path.join(gd, "ps1ios_universal"), "w") as f:
+                f.write("1\n")
         toml = os.path.join(gd, "game.toml")
         if os.path.isfile(toml):
             set_toml_renderer(toml, self.renderer)
@@ -360,6 +375,13 @@ class Build:
                               capture_output=True, text=True, check=True).stdout.strip()
         ddir = os.path.join(data, "Documents", "disc")
         os.makedirs(ddir, exist_ok=True)
+        if self.a.run_disc:
+            # Run a different disc than the one the app was built from (universal player test).
+            rd = os.path.join(self.work, "run-disc")
+            if os.path.isdir(rd):
+                shutil.rmtree(rd)
+            ing = ingest(self.a.run_disc, rd)
+            self.ev.say("running disc: " + os.path.basename(ing.primary.entry))
         for disc in ing.discs:
             src = os.path.dirname(disc.entry)
             for f in os.listdir(src):
@@ -420,9 +442,14 @@ class Build:
                 ev.say(json.dumps(info.as_dict()))
             ev.summary = f"{serial or 'unknown serial'}"
         prof = None if self.a.generic else load_profile(serial)
-        name = self.a.name or (prof["display_name"] if prof else (serial or "PS1 Game"))
+        if self.a.universal:
+            prof = None   # a universal player is built from the generic scaffold
+            name = self.a.name or "PS1 Player"
+            bundle = self.a.bundle_id or f"com.{slug(self.a.bundle_prefix or 'ps1ios')}.player".replace("-", "")
+        else:
+            name = self.a.name or (prof["display_name"] if prof else (serial or "PS1 Game"))
+            bundle = self.a.bundle_id or f"com.{slug(self.a.bundle_prefix or 'ps1ios')}.{slug(serial or name)}".replace("-", "")
         self.name = name
-        bundle = self.a.bundle_id or f"com.{slug(self.a.bundle_prefix or 'ps1ios')}.{slug(serial or name)}".replace("-", "")
         with ev.stage("make the recompilation project"):
             if prof:
                 ev.say(f"curated project for {serial}: {prof['title']}")

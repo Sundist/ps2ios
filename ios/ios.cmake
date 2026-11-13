@@ -57,7 +57,8 @@ function(ps1ios_finalize)
         message(FATAL_ERROR "ps1ios: psx-runtime target not found in this project")
     endif()
     ps1ios_flatten_source_defs(psx-runtime)
-    target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/src/ios_platform.mm" "${PS1IOS_DIR}/src/pad_layout.c")
+    target_sources(psx-runtime PRIVATE "${PS1IOS_DIR}/src/ios_platform.mm" "${PS1IOS_DIR}/src/pad_layout.c"
+        "${PS1IOS_DIR}/src/disc_probe.c" "${PS1IOS_DIR}/src/game_config.cpp")
     set_source_files_properties("${PS1IOS_DIR}/src/ios_platform.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_include_directories(psx-runtime PRIVATE "${PS1IOS_DIR}/src")
     # Desktop GL declarations + link-time bodies for psxrecomp's OpenGL backend,

@@ -11,6 +11,8 @@
 #include <string>
 #include "ios_platform.h"
 #include "pad_layout.h"
+#include "disc_probe.h"
+#include "game_config.h"
 
 static std::string g_data_dir;
 
@@ -89,6 +91,118 @@ static void write_disc_cfg_if_missing(NSString *docs) {
     }
 }
 
+// ---------------------------------------------------------------- universal player
+//
+// A universal build (GameData/ps1ios_universal in the bundle) is not tied to
+// the disc it was built from. It runs whatever disc is in Documents/disc: the
+// runtime is told about that disc through game.toml, and PSX_FORCE_INTERP makes
+// all game code run in psxrecomp's interpreter (no code compiled for another
+// game is ever used). iOS allows an interpreter; it does not allow generating
+// native code on the phone.
+
+static BOOL ps1ios_is_universal(void) {
+    NSString *flag = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"GameData/ps1ios_universal"];
+    return [NSFileManager.defaultManager fileExistsAtPath:flag];
+}
+
+// Disc images in Documents/disc a game can start from: every .cue, .chd and
+// .iso, and every .bin/.img no cue sheet names.
+static NSArray<NSString *> *ps1ios_discs(NSString *discDir) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSArray<NSString *> *names = [[fm contentsOfDirectoryAtPath:discDir error:nil]
+        sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+    NSMutableSet<NSString *> *tracks = [NSMutableSet set];
+    NSMutableArray<NSString *> *out = [NSMutableArray array];
+    for (NSString *n in names) {
+        if (![n.pathExtension.lowercaseString isEqualToString:@"cue"]) continue;
+        [out addObject:n];
+        NSString *text = [NSString stringWithContentsOfFile:[discDir stringByAppendingPathComponent:n]
+                                                   encoding:NSISOLatin1StringEncoding error:nil];
+        for (NSString *other in names)
+            if (other != n && [text rangeOfString:other options:NSCaseInsensitiveSearch].location != NSNotFound)
+                [tracks addObject:other];
+    }
+    for (NSString *n in names) {
+        NSString *e = n.pathExtension.lowercaseString;
+        if ([e isEqualToString:@"chd"] || [e isEqualToString:@"iso"] ||
+            (([e isEqualToString:@"bin"] || [e isEqualToString:@"img"]) && ![tracks containsObject:n]))
+            [out addObject:n];
+    }
+    return out;
+}
+
+// More than one game in Documents/disc: ask which one (a native alert; SDL shows
+// it without needing its video subsystem). The choice is remembered and offered first.
+static NSString *ps1ios_choose_disc(NSArray<NSString *> *discs) {
+    if (discs.count == 0) return nil;
+    if (discs.count == 1) return discs[0];
+    NSUserDefaults *u = NSUserDefaults.standardUserDefaults;
+    NSString *last = [u stringForKey:@"last_disc"];
+    NSMutableArray<NSString *> *order = [discs mutableCopy];
+    if (last && [order containsObject:last]) { [order removeObject:last]; [order insertObject:last atIndex:0]; }
+    const int n = (int)MIN(order.count, (NSUInteger)8);
+    SDL_MessageBoxButtonData buttons[8];
+    std::string labels[8];
+    for (int i = 0; i < n; i++) {
+        labels[i] = order[i].stringByDeletingPathExtension.UTF8String;
+        buttons[i].flags = i == 0 ? SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT : 0;
+        buttons[i].buttonID = i;
+        buttons[i].text = labels[i].c_str();
+    }
+    SDL_MessageBoxData box = {};
+    box.flags = SDL_MESSAGEBOX_INFORMATION;
+    box.title = "Choose a game";
+    box.message = order.count > 8 ? "Showing the first 8 discs in Documents/disc." : "Discs in Documents/disc";
+    box.numbuttons = n;
+    box.buttons = buttons;
+    int picked = 0;
+    if (!SDL_ShowMessageBox(&box, &picked) || picked < 0 || picked >= n) picked = 0;
+    [u setObject:order[picked] forKey:@"last_disc"];
+    return order[picked];
+}
+
+static void ps1ios_prepare_universal(NSString *docs) {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSString *discDir = [docs stringByAppendingPathComponent:@"disc"];
+    [fm createDirectoryAtPath:discDir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *disc = ps1ios_choose_disc(ps1ios_discs(discDir));
+    if (!disc) {
+        NSLog(@"ps1ios: universal player: no disc in Documents/disc");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "No game yet",
+            "Copy your PS1 disc image (.cue + .bin, .chd, .bin or .iso) into this app's \"disc\" folder "
+            "with the Files app, then open the app again.", NULL);
+        return;
+    }
+    NSString *rel = [@"disc" stringByAppendingPathComponent:disc];
+    [rel writeToFile:[docs stringByAppendingPathComponent:@"disc.cfg"] atomically:YES
+            encoding:NSUTF8StringEncoding error:nil];
+
+    // Describe this disc to the runtime: start from the bundled game.toml each time.
+    NSString *path = [discDir stringByAppendingPathComponent:disc];
+    char track[2048];
+    if ([disc.pathExtension.lowercaseString isEqualToString:@"cue"]) {
+        if (!ps1_cue_first_track(path.fileSystemRepresentation, track, sizeof track)) track[0] = 0;
+    } else {
+        snprintf(track, sizeof track, "%s", path.fileSystemRepresentation);
+    }
+    ps1_disc_info info;
+    char err[128] = "";
+    if (!track[0] || !ps1_disc_probe(track, &info, err, sizeof err)) {
+        // e.g. a .chd (compressed, not read here): the runtime still mounts it,
+        // and warns once that the serial differs from its game.toml.
+        NSLog(@"ps1ios: universal player: %@ not identified (%s); game.toml left as shipped", disc, err);
+        return;
+    }
+    NSString *shipped = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"GameData/game.toml"];
+    NSString *toml = [NSString stringWithContentsOfFile:shipped encoding:NSUTF8StringEncoding error:nil];
+    if (!toml) return;
+    std::string patched = ps1ios_game_toml_for_disc(toml.UTF8String, info, rel.UTF8String);
+    [[NSString stringWithUTF8String:patched.c_str()] writeToFile:[docs stringByAppendingPathComponent:@"game.toml"]
+                                                      atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    NSLog(@"ps1ios: universal player: %@ -> %s (%s), entry 0x%08X, load 0x%08X, text 0x%X", disc,
+          info.serial[0] ? info.serial : "no serial", info.boot, info.entry_pc, info.load_address, info.text_size);
+}
+
 extern "C" const char *ps1ios_data_dir(void) {
     if (!g_data_dir.empty()) return g_data_dir.c_str();
     @autoreleasepool {
@@ -97,7 +211,8 @@ extern "C" const char *ps1ios_data_dir(void) {
         // Large, re-creatable data must not go to iCloud backup.
         NSURL *mods = [NSURL fileURLWithPath:[docs stringByAppendingPathComponent:@"mods"]];
         [mods setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
-        write_disc_cfg_if_missing(docs);
+        if (ps1ios_is_universal()) ps1ios_prepare_universal(docs);
+        else write_disc_cfg_if_missing(docs);
         g_data_dir = docs.UTF8String;
     }
     return g_data_dir.c_str();
@@ -412,6 +527,8 @@ __attribute__((constructor)) static void ps1ios_install_touch_pad(void) {
     // shards): overlays come only from the ahead-of-time build; the rest runs
     // in psxrecomp's interpreter.
     setenv("PSX_OVERLAY_AUTOCOMPILE_OFF", "1", 1);
+    // Universal player: all game code runs in the interpreter (see above).
+    if (ps1ios_is_universal()) setenv("PSX_FORCE_INTERP", "1", 1);
     if (getenv("PS1IOS_PAD_DEMO")) {
         g_ignore_controllers = YES;
         setenv("SDL_JOYSTICK_MFI", "0", 1);   // hide the simulator's MFi "Gamepad" from SDL

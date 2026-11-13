@@ -9,6 +9,10 @@
  */
 #include <stdint.h>
 
+#ifndef VARIANT
+#define VARIANT 1
+#endif
+
 #define GP0       (*(volatile uint32_t *)0x1F801810)
 #define GP1       (*(volatile uint32_t *)0x1F801814)
 #define GPUSTAT   (*(volatile uint32_t *)0x1F801814)
@@ -71,11 +75,13 @@ static void quad_g(int x0, int y0, uint32_t c0, int x1, int y1, uint32_t c1,
     gp0(c3); gp0(xy(x3, y3));
 }
 
+#if VARIANT != 2
 static void tri_g(int x0, int y0, uint32_t c0, int x1, int y1, uint32_t c1, int x2, int y2, uint32_t c2) {
     gp0(0x30000000 | c0); gp0(xy(x0, y0));
     gp0(c1); gp0(xy(x1, y1));
     gp0(c2); gp0(xy(x2, y2));
 }
+#endif
 
 static void rect(int x, int y, int w, int h, uint32_t col) {
     gp0(0x60000000 | col);
@@ -137,15 +143,27 @@ int main(void) {
 
         /* background: vertical gradient that slowly shifts hue */
         int t = frame & 255;
+        int a = frame * 2, r = 70, cx = 160, cy = 100;
+#if VARIANT == 2
+        /* Variant B (a different disc, used to test running a game the app was
+         * not built from): warm colours and a spinning square. */
+        uint32_t top = rgb(120, 40 + (isin(t) + 4096) / 200, 20);
+        uint32_t bot = rgb(60, 10, 70 + (icos(t) + 4096) / 160);
+        quad_g(0, 0, top, SCREEN_W, 0, top, 0, SCREEN_H, bot, SCREEN_W, SCREEN_H, bot);
+        quad_g(cx + icos(a) * r / 4096, cy + isin(a) * r / 4096, rgb(255, 230, 60),
+               cx + icos(a + 64) * r / 4096, cy + isin(a + 64) * r / 4096, rgb(255, 120, 40),
+               cx + icos(a + 192) * r / 4096, cy + isin(a + 192) * r / 4096, rgb(250, 60, 160),
+               cx + icos(a + 128) * r / 4096, cy + isin(a + 128) * r / 4096, rgb(120, 60, 255));
+#else
         uint32_t top = rgb(20 + (isin(t) + 4096) / 200, 30, 90);
         uint32_t bot = rgb(10, 60 + (icos(t) + 4096) / 160, 70);
         quad_g(0, 0, top, SCREEN_W, 0, top, 0, SCREEN_H, bot, SCREEN_W, SCREEN_H, bot);
 
         /* spinning Gouraud triangle */
-        int a = frame * 2, r = 70, cx = 160, cy = 100;
         tri_g(cx + icos(a) * r / 4096, cy + isin(a) * r / 4096, rgb(255, 60, 60),
               cx + icos(a + 85) * r / 4096, cy + isin(a + 85) * r / 4096, rgb(60, 255, 60),
               cx + icos(a + 171) * r / 4096, cy + isin(a + 171) * r / 4096, rgb(60, 120, 255));
+#endif
 
         /* pulsing bars along the bottom */
         for (int i = 0; i < 10; i++) {
@@ -174,6 +192,13 @@ int main(void) {
 
         /* frame counter as a moving tick at the top */
         rect((frame * 2) % SCREEN_W, 4, 8, 4, rgb(255, 255, 255));
+
+        /* frame counter in binary, 16 boxes (bit 15 on the left): a screenshot
+         * taken after a known time gives the number of frames drawn */
+        for (int i = 0; i < 16; i++) {
+            int on = (frame >> (15 - i)) & 1;
+            rect(84 + i * 10, 14, 7, 7, on ? rgb(255, 255, 255) : rgb(40, 40, 40));
+        }
 
         wait_frame();
         GP1 = 0x05000000 | ((uint32_t)y0 << 10);        /* show what was just drawn */

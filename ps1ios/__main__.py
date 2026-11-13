@@ -65,6 +65,11 @@ def main(argv=None) -> int:
                         "auto = vulkan if the SDK is found")
     b.add_argument("--run-seconds", type=int, default=0,
                    help="simulator: start the game, wait this long, save a screenshot")
+    b.add_argument("--universal", action="store_true",
+                   help="build a universal player: one app that runs any PS1 disc put in its "
+                        "Documents/disc folder, with the game code interpreted (no per-game build)")
+    b.add_argument("--run-disc", default="",
+                   help="simulator: zip of the disc to run instead of the one the app was built from")
     b.add_argument("--pad-demo", action="store_true",
                    help="simulator self-test: the touch pad holds Right+Cross after 15 s")
     b.add_argument("--human", action="store_true", help="readable progress instead of JSON lines")

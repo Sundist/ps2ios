@@ -38,6 +38,8 @@ jobs:
           printf '#include <stdlib.h>\nint g(void){return system("y");}\n' > compat_test.c
           xcrun --sdk iphoneos clang++ -arch arm64 -isysroot $SDK -miphoneos-version-min=16.0 -std=c++17 -Werror -include ios/src/ios_compat.h -c compat_test.cpp -o compat_cpp.o
           xcrun --sdk iphoneos clang -arch arm64 -isysroot $SDK -miphoneos-version-min=16.0 -Werror -include ios/src/ios_compat.h -c compat_test.c -o compat_c.o
+          xcrun --sdk iphoneos clang $FLAGS -std=c99 -c ios/src/disc_probe.c -o disc_probe.o
+          xcrun --sdk iphoneos clang++ $FLAGS -std=c++17 -c ios/src/game_config.cpp -o game_config.o
           ls -la *.o
       - name: CMake fragment parses
         run: |
