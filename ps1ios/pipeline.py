@@ -398,13 +398,16 @@ class Build:
         with open(log_path, "w") as log:
             proc = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process",
                                      udid, bundle], stdout=log, stderr=subprocess.STDOUT, env=env)
-            first = min(12, max(1, self.a.run_seconds // 3))
-            time.sleep(first)
-            early = os.path.join(out_dir, f"{slug(self.name)}-simulator-{first}s.png")
-            run(["xcrun", "simctl", "io", udid, "screenshot", early], self.ev, quiet=True)
-            time.sleep(max(0, self.a.run_seconds - first))
-            shot = os.path.join(out_dir, f"{slug(self.name)}-simulator.png")
-            run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
+            # Four screenshots spread over the run: the first can land before the game
+            # draws on a slow machine, and two later ones give a frame-rate measurement.
+            base = os.path.join(out_dir, f"{slug(self.name)}-simulator")
+            marks = [max(1, self.a.run_seconds * k // 4) for k in (1, 2, 3)] + [self.a.run_seconds]
+            waited = 0
+            for n, mark in enumerate(marks, 1):
+                time.sleep(max(0, mark - waited))
+                waited = mark
+                shot = f"{base}.png" if n == len(marks) else f"{base}-{n}.png"
+                run(["xcrun", "simctl", "io", udid, "screenshot", shot], self.ev, quiet=True)
             alive = proc.poll() is None
             proc.terminate()
         for label, root in (("app bundle", app), ("Documents", os.path.join(data, "Documents"))):
